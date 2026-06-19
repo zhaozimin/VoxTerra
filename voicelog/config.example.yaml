@@ -50,5 +50,8 @@ fallback_path: "~/voicelog-fallback"
 # 额外要丢弃的「幻觉套话」（whisper 在噪声上冒的字幕水印）
 drop_phrases: []
 
-# 后处理替换（识别结果 → 正确写法）。ASCII 词按词边界匹配，不误伤更大的英文词。
+# 关键词管理（菜单栏「关键词管理…」有可视化窗口，下面两项一般不用手改）：
+# replace = 精确纠错（识别结果 → 正确写法）。ASCII 词按词边界匹配，不误伤更大的英文词。
 replace: {}
+# terms = 识别词库（只写目标词）。注入 whisper 的 initial_prompt，从源头让它更可能直接听对，零误伤。
+terms: []
