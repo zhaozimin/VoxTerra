@@ -20,7 +20,18 @@
 - Python ≥ 3.10(安装脚本会用 uv 自动准备一个 hermetic 3.12)
 - 一支麦克风(原项目用 DJI Mic Mini,任何输入设备都行)
 
-## 🚀 安装
+## 📥 下载安装（推荐）
+
+去 [**Releases**](https://github.com/zhaozimin/Recorder/releases) 下载最新 `VoiceLog-x.y.z.dmg`，双击打开，把 **VoiceLog** 拖进「应用程序」即可。
+
+- **要求**：Apple Silicon Mac（M 系列）+ macOS 13 以上。
+- **首次启动**：会弹「VoiceLog 想访问麦克风」→ 点**允许**；之后它常驻菜单栏（无 Dock 图标）。
+- **首次转写**：会联网下载一次语音模型（约 1–2 GB，仅此一次），之后全离线。
+- 已 Apple 公证，双击直接开；若想开机自启，到「系统设置 → 通用 → 登录项」把 VoiceLog 加上。
+
+> Windows 版正在移植中（核心引擎是 Apple 独占的，需换转写后端，见 `packaging/windows/PORT_PLAN.md`）。
+
+## 🚀 从源码运行（开发者）
 
 ```bash
 git clone https://github.com/zhaozimin/Recorder.git
@@ -30,6 +41,8 @@ bash voicelog/install.sh
 ```
 
 装完两步手动收尾:① 前台跑一次主程序授予麦克风权限;② `launchctl load` 启用后台自启。详见 [voicelog/README.md](voicelog/README.md)。
+
+自己打安装包：`bash packaging/macos/build.sh`（需 Developer ID 证书），再 `bash packaging/macos/notarize.sh`（需 Apple ID 专用密码）公证。
 
 ## ⚙️ 配置(`voicelog/config.yaml`)
 
@@ -49,7 +62,9 @@ bash voicelog/install.sh
 
 ## 📦 打包成 App
 
-`.app` 双击即用版本正在制作中(briefcase 打包 + 首次运行向导 + 自动下载模型)。
+已支持 `.app` 双击即用：PyInstaller 打包 + Developer ID 签名 + Apple 公证 → `.dmg`。
+配置、日志、声纹落在 `~/Library/Application Support/VoiceLog`（bundle 只读，签名安全）；模型首次运行联网下载。
+脚本见 [`packaging/macos/`](packaging/macos)，Windows 移植蓝图见 [`packaging/windows/PORT_PLAN.md`](packaging/windows/PORT_PLAN.md)。
 
 ## 📝 License
 

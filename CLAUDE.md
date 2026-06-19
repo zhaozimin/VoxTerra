@@ -4,8 +4,10 @@ Python 3.12(uv) + mlx-whisper(large-v3) + silero-vad + speechbrain(ECAPA) + soun
 把贴身 DJI Mic Mini 的语音实时转成当天 Markdown 日志。**音频绝不写盘，文字不上传**，全本地。
 
 <directory>
-voicelog/ - 应用本体 (主程序 voicelog_menubar.py + 声纹子模块 speaker.py + 配置 + 依赖 + 日志)
-launchd/  - 开机自启：plist 与装载脚本 (登录即常驻)
+voicelog/  - 应用本体 (主程序 voicelog_menubar.py + 声纹子模块 speaker.py + 配置 + 依赖 + 日志)
+launchd/   - 开机自启：plist 与装载脚本 (登录即常驻，开发机自用)
+packaging/ - 分发打包 (macos: PyInstaller+签名+公证→.dmg；windows: 移植脚手架+CI)
+.github/   - GitHub Actions (build-windows.yml：windows-latest 出 .exe，待移植落地)
 </directory>
 
 <config>

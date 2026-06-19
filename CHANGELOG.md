@@ -2,6 +2,21 @@
 
 版本规则：小改 +0.1，大改 +1.0。
 
+## v0.8.0 — 2026-06-19
+可分发安装包：macOS 签名公证 `.dmg` + Windows 移植脚手架。
+- **路径解耦(打包命门)**：`.app` 一旦签名公证 `Contents/` 即只读，往里写=毁签名。故拆分
+  只读资源(RES，bundle 内) 与 可写用户数据(DATA，`~/Library/Application Support/VoiceLog`)。
+  打包版的 config/日志/声纹全落用户区，首次运行把内置默认配置播种过去；源码运行行为不变(现有 launchd 部署零改动)。
+- **macOS 打包**：`packaging/macos/` —— PyInstaller spec(收集 mlx/torch/speechbrain/silero/sounddevice，
+  arm64，LSUIElement 无 Dock，麦克风用途串) + 硬化运行时由内向外深签(entitlements 放行 JIT/库校验)
+  + `build.sh`(构建→签名→DMG) + `notarize.sh`(notarytool 公证→装订 App 与 DMG)。
+  模型不打包，首次运行联网下载，DMG 约 314M(稳在 GitHub Release 单文件 2G 上限内)。仅 Apple Silicon(mlx 限制)。
+- **App 图标**：`make_icon.py` 把品牌白 logo 合成到深色 squircle，生成 `VoiceLog.icns`(Finder/Dock/DMG 用)。
+- **Windows 脚手架**：`packaging/windows/`(PORT_PLAN 架构蓝图 + 依赖清单 + spec/iss 骨架) +
+  `.github/workflows/build-windows.yml`(windows-latest 出 .exe)。**未实现**——核心三件套(mlx/rumps/pyobjc)
+  macOS 独占，Windows 是真正的移植(转写换 faster-whisper、托盘换 pystray、窗口换 tkinter)，待后续推进。
+- 版本号 → `0.8.0`(VERSION 常量与 Info.plist 同步)。
+
 ## v0.7.2 — 2026-06-19
 界面语言与转写语言解耦 + 新增主语言/辅语言。
 - 修复：v0.7.0 把「界面语言」和「转写语言」绑死，导致设英文界面就强制按英文识别。这是设计错误——

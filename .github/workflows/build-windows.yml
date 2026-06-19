@@ -1,0 +1,53 @@
+# ============================================================================
+#  VoiceLog · Windows 安装包 CI (脚手架)
+#  在 windows-latest 上构建 .exe 安装包。需要先完成 Windows 移植(见
+#  packaging/windows/PORT_PLAN.md)——在 spec/iss 真实落地前,本工作流只是跑道。
+#  触发:手动 / 推送到 windows-port 分支 / 打 vX.Y-win 标签(自动挂 Release)。
+# ============================================================================
+name: Build Windows Installer
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [windows-port]
+    tags: ['v*-win']
+
+permissions:
+  contents: write          # 打 tag 时需要写 Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r packaging/windows/requirements-windows.txt
+          pip install pyinstaller
+
+      - name: Build app (PyInstaller)
+        run: pyinstaller --noconfirm packaging/windows/VoiceLog-win.spec
+
+      - name: Build installer (Inno Setup)
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging\windows\installer.iss
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceLog-Windows-Setup
+          path: packaging/windows/Output/*.exe
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: packaging/windows/Output/*.exe

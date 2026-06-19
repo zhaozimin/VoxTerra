@@ -1,0 +1,12 @@
+# VoiceLog · Windows 依赖 (移植用,与 macOS 不同)
+# 去掉 macOS 独占的 mlx-whisper / rumps / pyobjc;换成跨平台等价物。
+faster-whisper       # 转写引擎(CTranslate2),替代 mlx-whisper
+silero-vad           # VAD 切句(跨平台,与 macOS 同)
+sounddevice          # 音频采集(PortAudio,跨平台,与 macOS 同)
+speechbrain          # 声纹门控(ECAPA,跨平台,与 macOS 同)
+numpy
+pyyaml
+tzdata
+pystray              # 系统托盘,替代 rumps
+pillow               # pystray 图标位图所需
+# 注册/纠错窗口用 Python 内置 tkinter(随 CPython 提供,无需在此声明)

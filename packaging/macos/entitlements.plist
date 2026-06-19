@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 硬化运行时(Hardened Runtime)所需豁免:公证强制要求开硬化运行时,而 Python/torch/mlx
+     会 JIT、动态分配可执行内存、加载大量第三方未签名 dylib——必须显式放行,否则启动即崩。 -->
+<plist version="1.0">
+<dict>
+    <!-- Python 字节码/torch/mlx 的即时编译 -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- ctypes / 原生扩展会申请可写可执行内存 -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- 加载随包携带、非本团队签名的 .dylib/.so(torch/mlx/sounddevice 等) -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- 允许读取 DYLD_* 环境变量(PyInstaller 引导期需要) -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <!-- 麦克风(非沙盒下由 TCC + Info.plist 用途串主导,这里一并声明无害) -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+</dict>
+</plist>

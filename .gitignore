@@ -33,6 +33,12 @@ build/
 dist/
 *.app
 *.dmg
+*.zip
+# 图标中间产物（由 make_icon.py + iconutil 重生成；只入库最终的 VoiceLog.icns）
+packaging/macos/VoiceLog.iconset/
+packaging/macos/VoiceLog_iconmaster.png
+# Windows CI 产物
+packaging/windows/Output/
 
 # ===== 内部部署笔记（含个人上下文，不公开）=====
 交给ClaudeCode-部署指令.md
