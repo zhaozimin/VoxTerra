@@ -8,6 +8,7 @@
 - `speaker.py`: 声纹门控子模块。`SpeakerGate` 用 ECAPA-TDNN(speechbrain) 把语音映射成 192 维音色指纹，注册机主质心后逐句算余弦相似度裁决「是不是机主」。懒加载、fail-open(未注册/故障一律放行)、附「提取质量」自一致性指标。
 - `enroll_ui.py`: 声纹注册 UI 面(PyObjC/Cocoa)。`EnrollWindow` 两阶段：须知页(本地/隐私说明+开始按钮，不录音)→点开始→朗读页(句子+进度条)。纯展示层，采集逻辑在主文件 `Recorder.enroll`(质量驱动)，进度由 rumps.Timer 喂。
 - `replace_ui.py`: 关键词管理 UI 面(PyObjC/Cocoa，**模态**——无 Dock 进程唯有模态窗口能稳拿键盘焦点)。`ReplaceWindow.run_modal()` 返回编辑后的文本，主文件 `parse_corrections`/`write_corrections` 解析为「精确纠错 rules(`错=正`) + 识别词库 terms(单写目标词，注入 prompt)」并写回 config。
+- `i18n.py`: 多语言中枢。UI 文案 + 注册朗读稿/须知 + whisper 转写语言，全部按当前语言取(中/英/日)。语言由 config `ui_language` 决定(""=跟随系统)，菜单「语言」可切，切后 UI 与转写语言同步变。
 - `ui_common.py`: 各原生窗口公共底座。`BtnTarget`(按钮回调桥) + `make_label`/`make_rich_label`(标签) + `push_regular`/`pop_regular`(激活策略引用计数：开窗变前台、计数归零回无 Dock)，被 enroll_ui / replace_ui 共用。
 - `config.yaml`: 运行配置(本机实际值)。模型路径、设备、时区、术语偏置、纠错表、**三道门阈值**、回退目录。
 - `config.example.yaml`: 配置模板，`cp` 成 config.yaml 后改。

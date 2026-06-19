@@ -9,8 +9,9 @@ vault_path: "~/VoiceLog/声音日志"
 # large-v3 最准；想更快用 "mlx-community/whisper-large-v3-turbo"
 model: "mlx-community/whisper-large-v3-turbo"
 
-# 识别语言：中文 "zh"；中英混说可留空自动检测
-language: "zh"
+# 界面与转写语言：""=跟随系统；"zh"简体中文 / "en"English / "ja"日本語。
+# 选定后，界面文字 + 你说话转写出来的文字都用这个语言。也可在菜单栏「语言」随时切换(会写回这里)。
+ui_language: ""
 
 # 时间戳/当天归属日的时区。留空=跟随系统本地；或 IANA 名。菜单栏「时区」可随时切换。
 timezone: ""

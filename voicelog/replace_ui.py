@@ -21,6 +21,7 @@ from ui_common import (
     BtnTarget, make_rich_label, title_font, body_font,
     C_PRIMARY, C_SECONDARY, C_TERTIARY, push_regular, pop_regular,
 )
+import i18n
 
 _BIG = 1.0e7  # 文本容器"无限高"，配合可垂直增长的 textview
 
@@ -35,7 +36,7 @@ class ReplaceWindow:
         win = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, W, H), NSWindowStyleMaskTitled,  # 不加 Closable：避免红叉关闭绕过 stopModal
             NSBackingStoreBuffered, False)
-        win.setTitle_("关键词纠错")
+        win.setTitle_(i18n.t("kw_win_title"))
         win.setLevel_(NSFloatingWindowLevel)
         win.center()
         self.win = win
@@ -43,13 +44,13 @@ class ReplaceWindow:
 
         c.addSubview_(make_rich_label(
             NSMakeRect(24, H - 152, W - 48, 132),
-            [("关键词管理\n", title_font(15), C_PRIMARY()),
-             ("每行一条，「保存」后立即生效。\n\n", body_font(12), C_SECONDARY()),
-             ("写「错词 = 正词」", body_font(13), C_PRIMARY()),
-             ("    精确纠错：转写出现错词，就替换成正词\n", body_font(12), C_SECONDARY()),
-             ("只写「目标词」", body_font(13), C_PRIMARY()),
-             ("       识别词库：让 Whisper 更可能直接听对它\n", body_font(12), C_SECONDARY()),
-             ("例：克劳德 = Claude      或只写      Obsidian", body_font(11), C_TERTIARY())]))
+            [(i18n.t("kw_h_title") + "\n", title_font(15), C_PRIMARY()),
+             (i18n.t("kw_h_sub") + "\n\n", body_font(12), C_SECONDARY()),
+             (i18n.t("kw_h_r1a"), body_font(13), C_PRIMARY()),
+             (i18n.t("kw_h_r1b") + "\n", body_font(12), C_SECONDARY()),
+             (i18n.t("kw_h_r2a"), body_font(13), C_PRIMARY()),
+             (i18n.t("kw_h_r2b") + "\n", body_font(12), C_SECONDARY()),
+             (i18n.t("kw_h_eg"), body_font(11), C_TERTIARY())]))
 
         # 可编辑文本框(正确配置容器，编辑/换行/滚动才正常)
         scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(24, 72, W - 48, H - 244))
@@ -74,7 +75,7 @@ class ReplaceWindow:
         c.addSubview_(scroll)
 
         cancel = NSButton.alloc().initWithFrame_(NSMakeRect(W - 260, 20, 110, 34))
-        cancel.setTitle_("取消")
+        cancel.setTitle_(i18n.t("cancel"))
         cancel.setBezelStyle_(1)
         cancel.setKeyEquivalent_("\x1b")   # Esc = 取消
         self._t_cancel = BtnTarget.alloc().initWithCallback_(self._cancel)
@@ -83,7 +84,7 @@ class ReplaceWindow:
         c.addSubview_(cancel)
 
         save = NSButton.alloc().initWithFrame_(NSMakeRect(W - 140, 20, 110, 34))
-        save.setTitle_("保存")
+        save.setTitle_(i18n.t("save"))
         save.setBezelStyle_(1)
         self._t_save = BtnTarget.alloc().initWithCallback_(self._save)
         save.setTarget_(self._t_save)

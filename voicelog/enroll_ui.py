@@ -21,6 +21,7 @@ from ui_common import (
     BtnTarget, make_label, make_rich_label, title_font, C_PRIMARY,
     push_regular, pop_regular,
 )
+import i18n
 
 _BIG = 1.0e7
 
@@ -40,7 +41,7 @@ class EnrollWindow:
         win = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, W, H), NSWindowStyleMaskTitled,  # 不加 Closable：只走我们的按钮，生命周期可控
             NSBackingStoreBuffered, False)
-        win.setTitle_("声纹注册")
+        win.setTitle_(i18n.t("enroll_win_title"))
         win.setLevel_(NSFloatingWindowLevel)
         win.center()
         self.win = win
@@ -48,7 +49,7 @@ class EnrollWindow:
 
         self.header = make_rich_label(
             NSMakeRect(24, H - 58, W - 48, 38),
-            [("声纹注册", title_font(15), C_PRIMARY())])
+            [(i18n.t("enroll_win_title"), title_font(15), C_PRIMARY())])
         c.addSubview_(self.header)
 
         # 文本区：须知 / 朗读稿复用同一控件，切阶段时换内容与字号
@@ -80,7 +81,7 @@ class EnrollWindow:
         c.addSubview_(self.status)
 
         cancel = NSButton.alloc().initWithFrame_(NSMakeRect(W - 260, 16, 110, 34))
-        cancel.setTitle_("取消")
+        cancel.setTitle_(i18n.t("cancel"))
         cancel.setBezelStyle_(1)
         cancel.setKeyEquivalent_("\x1b")   # Esc = 取消（永远有键盘退路）
         self._t_cancel = BtnTarget.alloc().initWithCallback_(self._cancel)
@@ -89,7 +90,7 @@ class EnrollWindow:
         c.addSubview_(cancel)
 
         start = NSButton.alloc().initWithFrame_(NSMakeRect(W - 140, 16, 110, 34))
-        start.setTitle_("开始")
+        start.setTitle_(i18n.t("start"))
         start.setBezelStyle_(1)
         start.setKeyEquivalent_("\r")   # 回车=开始
         self._t_start = BtnTarget.alloc().initWithCallback_(self._begin)
@@ -112,7 +113,7 @@ class EnrollWindow:
             self.start_btn.setHidden_(True)
             self.bar.setHidden_(False)
             self.status.setHidden_(False)
-            self.status.setStringValue_("准备中…请开始朗读")
+            self.status.setStringValue_(i18n.t("prepare"))
         except Exception:
             pass
         if self._on_start:
@@ -130,8 +131,9 @@ class EnrollWindow:
     def update(self, progress: float, voiced: float, target: float, elapsed: int):
         try:
             self.bar.setDoubleValue_(float(progress))
-            self.status.setStringValue_(
-                f"已采集有效语音 {voiced:.1f} / {target:.0f} 秒（{round(progress*100)}%）· 用时 {elapsed}s · 请继续朗读")
+            self.status.setStringValue_(i18n.t(
+                "progress", v=f"{voiced:.1f}", t=f"{target:.0f}",
+                p=round(progress * 100), e=elapsed))
         except Exception:
             pass
 
