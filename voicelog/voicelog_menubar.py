@@ -43,7 +43,7 @@ from speaker import SpeakerGate
 BASE = Path(__file__).resolve().parent
 CFG = yaml.safe_load((BASE / "config.yaml").read_text(encoding="utf-8")) or {}
 
-VERSION = "0.2.1"
+VERSION = "0.3.0"
 
 SR = 16000
 BLOCK = 512  # Silero v5 在 16k 采样率下要求每块正好 512 个采样
@@ -70,30 +70,31 @@ MIN_RMS_DBFS = float(CFG.get("min_rms_dbfs", -45.0))  # 需按你的麦增益校
 SPEAKER_GATE = bool(CFG.get("speaker_gate", False))
 SPEAKER_THRESHOLD = float(CFG.get("speaker_threshold", 0.35))  # 偏放行；按菜单显示的「上句相似度」校准
 SPEAKER_PROFILE = CFG.get("speaker_profile", "~/voicelog-models/speaker_profile.npy")
-ENROLL_SEC = int(CFG.get("enroll_sec", 25))  # 注册录音时长
-ENROLL_SCRIPT = CFG.get("enroll_script") or None  # 自定义朗读稿；留空用内置唐诗
+ENROLL_SCRIPT = CFG.get("enroll_script") or None  # 自定义朗读稿；留空用内置中英混合稿
+# 质量驱动注册：不再按固定秒数"盲采"(用户发呆就采到一堆静音)，改为累计「有效语音」秒数，采够才停。
+ENROLL_VOICED_SEC = float(CFG.get("enroll_voiced_sec", 20))     # 目标:采够这么多秒有效语音=完成
+ENROLL_MAX_SEC = float(CFG.get("enroll_max_sec", 120))          # 硬上限:一直没声音时兜底，防止无限等
+ENROLL_VOICE_FLOOR = float(CFG.get("enroll_voice_floor_dbfs", -40.0))  # 高于此响度的帧才算"在朗读"
+ENROLL_QUALITY_OK = float(CFG.get("enroll_quality_ok", 0.60))   # 提取质量低于此提示重采
 
-# 内置注册朗读稿：选小学课本级的唐诗——人人会念、零争议、音素覆盖广，比临场瞎说更稳。
-# 念全约 35~45s，给 25s 录音留足余量；念完可从头再念。
-DEFAULT_ENROLL_SCRIPT = """《静夜思》（唐·李白）
-床前明月光，疑是地上霜。
-举头望明月，低头思故乡。
+# 内置注册朗读稿：中英文混合 + 用户真实术语 + 唐诗。
+# 中英混说是机主的真实说话方式(Claude/Anthropic/MCP…)，把这部分音色也采进去，质心才贴合日常。
+# 唐诗补足音素广度、零争议、人人会念。够念约 60s，质量驱动下念完可从头再念。
+DEFAULT_ENROLL_SCRIPT = """请用平常聊天的语气，自然地朗读下面这段中英文内容：
 
-《春晓》（唐·孟浩然）
-春眠不觉晓，处处闻啼鸟。
-夜来风雨声，花落知多少。
+我每天用 Claude 和 Anthropic 的工具做产品设计与软件开发，
+经常聊到 MCP、RAG、Agent、token、prompt、embedding 这些概念。
+The quick brown fox jumps over the lazy dog.
+Let's build something great with large language models today.
 
-《登鹳雀楼》（唐·王之涣）
-白日依山尽，黄河入海流。
-欲穷千里目，更上一层楼。
+如果还没结束，请接着把这几首唐诗也念一遍：
 
-《悯农》（唐·李绅）
-锄禾日当午，汗滴禾下土。
-谁知盘中餐，粒粒皆辛苦。
+《静夜思》床前明月光，疑是地上霜。举头望明月，低头思故乡。
+《登鹳雀楼》白日依山尽，黄河入海流。欲穷千里目，更上一层楼。
+《春晓》春眠不觉晓，处处闻啼鸟。夜来风雨声，花落知多少。
+《悯农》锄禾日当午，汗滴禾下土。谁知盘中餐，粒粒皆辛苦。
 
-《咏鹅》（唐·骆宾王）
-鹅，鹅，鹅，曲项向天歌。
-白毛浮绿水，红掌拨清波。"""
+念完了可以从头再念，直到提示「采集完成」。"""
 
 
 def log_dir() -> Path:
@@ -343,6 +344,7 @@ class Recorder(threading.Thread):
         self.speaker = SpeakerGate(SPEAKER_PROFILE, SPEAKER_THRESHOLD)
         self.speaker_on = SPEAKER_GATE  # 运行时可切换；注册后无需重启即可开启
         self._enroll = None  # 注册采集缓冲：None=未注册中；list=正在旁路收集机主语音
+        self._enroll_cancel = False
 
     def _callback(self, indata, frames, time_info, status):
         if status:
@@ -415,17 +417,44 @@ class Recorder(threading.Thread):
         return False
 
     def enroll(self):
-        """旁路采集 ENROLL_SEC 秒机主语音并注册声纹；后台线程跑，进度/结果写入 state。"""
+        """质量驱动注册：旁路采集，累计「有效语音」秒数(响度过门的帧)，采够 ENROLL_VOICED_SEC 才停。
+        用户中途发呆不会让采集失效——只数真正在说话的部分；硬上限 ENROLL_MAX_SEC 兜底。进度写入 state。"""
+        self._enroll_cancel = False
+
         def _run():
-            self.state["enrolling"] = True
+            st = self.state
+            st.update(enrolling=True, enroll_voiced=0.0, enroll_progress=0.0,
+                      enroll_elapsed=0, enroll_quality=None, enroll_ok=False,
+                      enroll_cancelled=False)
             self._enroll = []                       # 打开旁路采集（callback 开始喂数据）
-            sd.sleep(ENROLL_SEC * 1000)
-            frames, self._enroll = self._enroll, None
-            wav = np.concatenate(frames) if frames else np.zeros(0, np.float32)
-            self.state["enroll_ok"] = bool(wav.size) and self.speaker.enroll(wav)
-            self.state["enrolled"] = self.speaker.enrolled
-            self.state["enrolling"] = False
+            voiced_frames, voiced_sec, elapsed, idx = [], 0.0, 0.0, 0
+            while (not self._enroll_cancel and voiced_sec < ENROLL_VOICED_SEC
+                   and elapsed < ENROLL_MAX_SEC):
+                sd.sleep(200)
+                elapsed += 0.2
+                frames = self._enroll or []
+                for f in frames[idx:]:              # 只数新到的帧里"在朗读"的部分
+                    if _rms_dbfs(f) > ENROLL_VOICE_FLOOR:
+                        voiced_frames.append(f)
+                        voiced_sec += len(f) / SR
+                idx = len(frames)
+                st["enroll_voiced"] = round(voiced_sec, 1)
+                st["enroll_progress"] = min(1.0, voiced_sec / ENROLL_VOICED_SEC)
+                st["enroll_elapsed"] = round(elapsed)
+            self._enroll = None
+            if self._enroll_cancel:
+                st.update(enrolling=False, enroll_cancelled=True, enroll_ok=False)
+                return
+            wav = np.concatenate(voiced_frames) if voiced_frames else np.zeros(0, np.float32)
+            st["enroll_ok"] = bool(wav.size) and self.speaker.enroll(wav)  # 只拿有效语音去建质心
+            st["enroll_quality"] = self.speaker.last_quality
+            st["enrolled"] = self.speaker.enrolled
+            st["enrolling"] = False
+
         threading.Thread(target=_run, daemon=True).start()
+
+    def cancel_enroll(self):
+        self._enroll_cancel = True
 
     def _transcribe(self, utt: np.ndarray):
         try:
@@ -508,12 +537,45 @@ class VoiceLogApp(rumps.App):
         if not self.rec.speaker.available():
             rumps.alert("声纹功能不可用", "未检测到 speechbrain/torch，请在 venv 里安装 speechbrain。")
             return
-        rumps.alert("声纹注册",
-                    f"点「好」后会弹出一段朗读稿（唐诗，照着念即可）。\n"
-                    f"请戴好领夹麦、用平常语气朗读约 {ENROLL_SEC} 秒，念完可从头再念。\n"
-                    f"录音自动开始和结束：菜单栏图标变 ● 表示进行中，变回 🎙 即完成。")
-        show_enroll_script()   # 弹出朗读稿当提词器
-        self.rec.enroll()      # 后台采集 25s 并注册
+        script = ENROLL_SCRIPT or DEFAULT_ENROLL_SCRIPT
+        try:
+            from enroll_ui import EnrollWindow
+            self._enroll_win = EnrollWindow(script, on_cancel=self.rec.cancel_enroll)
+        except Exception:
+            append_err("EnrollWindow: " + traceback.format_exc())
+            self._enroll_win = None
+            show_enroll_script()       # 原生窗口失败则退化为 TextEdit 提词
+        self._enroll_close_in = 12
+        self.rec.enroll()              # 质量驱动采集
+        self._enroll_timer = rumps.Timer(self._enroll_tick, 0.25)
+        self._enroll_timer.start()     # 主线程刷新窗口进度
+
+    def _enroll_tick(self, _):
+        st = self.state
+        win = getattr(self, "_enroll_win", None)
+        if st.get("enrolling"):        # 采集中：刷进度
+            if win:
+                win.update(st.get("enroll_progress", 0.0), st.get("enroll_voiced", 0.0),
+                           ENROLL_VOICED_SEC, st.get("enroll_elapsed", 0))
+            self._enroll_close_in = 12
+            return
+        if win and not getattr(win, "_finished", False):  # 刚结束：展示结果
+            if st.get("enroll_cancelled"):
+                win.finish(False, "已取消")
+            elif st.get("enroll_ok"):
+                q = st.get("enroll_quality")
+                qp = f"{round(q*100)}%" if isinstance(q, (int, float)) else "—"
+                tip = "" if (not isinstance(q, (int, float)) or q >= ENROLL_QUALITY_OK) else "（偏低，建议安静环境重采）"
+                win.finish(True, f"✓ 采集完成 · 提取质量 {qp}{tip}")
+            else:
+                win.finish(False, "采集失败，请重试")
+        self._enroll_close_in = getattr(self, "_enroll_close_in", 12) - 1
+        if self._enroll_close_in <= 0:  # 结果展示 ~3s 后自动收尾
+            if win:
+                win.close()
+            self._enroll_win = None
+            if getattr(self, "_enroll_timer", None):
+                self._enroll_timer.stop()
 
     def _spk_title(self) -> str:
         s = self.state.get("last_score")

@@ -36,6 +36,7 @@ class SpeakerGate:
         self._lock = threading.Lock()    # 模型加载/推理串行化，避免多线程重复加载
         self.ref = self._load_profile()  # 注册声纹质心(192,) 或 None
         self.last_err = ""
+        self.last_quality = None         # 上次注册的「提取质量」(各窗对质心的平均余弦, 0~1)
 
     # ---------------- 模型(懒加载，首次注册/校验时才付加载代价) ----------------
     def _model(self):
@@ -79,6 +80,8 @@ class SpeakerGate:
             embs = np.stack([self._embed(c) for c in chunks])
             ref = embs.mean(axis=0)
             self.ref = ref / (np.linalg.norm(ref) + 1e-9)
+            # 提取质量：各窗嵌入与质心的平均余弦——越接近 1 说明这次采集越稳定一致
+            self.last_quality = float(np.mean(embs @ self.ref)) if len(embs) >= 2 else 1.0
             self.profile_path.parent.mkdir(parents=True, exist_ok=True)
             np.save(self.profile_path, self.ref)
             self.last_err = ""
