@@ -5,3 +5,4 @@ numpy
 rumps
 pyyaml
 tzdata
+speechbrain   # 声纹门控(ECAPA-TDNN 说话人验证)；依赖 torch/torchaudio(silero 已带入)

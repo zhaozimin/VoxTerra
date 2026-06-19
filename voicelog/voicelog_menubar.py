@@ -2,14 +2,24 @@
 # -*- coding: utf-8 -*-
 """
 VoiceLog · macOS 菜单栏实时语音日志
-流程：DJI Mic Mini → sounddevice 实时采集 → Silero VAD 按句切 → mlx-whisper(本地 large-v3) 转写
-      → 术语纠错 + 幻觉过滤 → 按配置时区写入当天笔记（外置盘掉线自动回退内置盘）
+
+[INPUT]: 依赖 sounddevice(采集)、silero_vad(切句)、mlx_whisper(转写)、rumps(菜单栏)、
+         speaker.SpeakerGate(声纹门控)；读 config.yaml 全部参数
+[OUTPUT]: 可执行入口 VoiceLogApp；幻觉/复读过滤 is_junk、能量门 _rms_dbfs、专名纠错 apply_replace
+[POS]: voicelog 的主程序与唯一进程；speaker.py 是它的声纹子模块
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
+流程：DJI Mic Mini → sounddevice 实时采集 → Silero VAD 按句切
+      → ① 时长门(太短=噪声尖峰) → ② 能量/近场门(太远=外放视频) → ③ 声纹门(不是机主=丢)
+      → mlx-whisper(本地 large-v3) 转写 → 复读/幻觉过滤 + 术语纠错
+      → 按配置时区写入当天笔记（外置盘掉线自动回退内置盘）
 特点：音频转写后立即丢弃，绝不写盘；菜单栏小图标常驻，无 Dock、不抢前台。
-配置见 config.yaml：模型/设备/时区/术语偏置(initial_prompt)/纠错表(replace)/掉线回退。
+配置见 config.yaml：模型/设备/时区/术语偏置/纠错表/掉线回退/三道门控阈值。
 """
 import os
 import re
 import sys
+import zlib
 import queue
 import threading
 import datetime
@@ -26,11 +36,13 @@ import rumps
 import mlx_whisper
 from silero_vad import load_silero_vad, VADIterator
 
+from speaker import SpeakerGate
+
 # ---------------- 读取配置 ----------------
 BASE = Path(__file__).resolve().parent
 CFG = yaml.safe_load((BASE / "config.yaml").read_text(encoding="utf-8")) or {}
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 SR = 16000
 BLOCK = 512  # Silero v5 在 16k 采样率下要求每块正好 512 个采样
@@ -44,6 +56,20 @@ FALLBACK = Path(os.path.expanduser(CFG.get("fallback_path", "~/voicelog-fallback
 REPLACE = CFG.get("replace") or {}
 INITIAL_PROMPT = CFG.get("initial_prompt", "以下是简体中文普通话的日常口语记录。") or None
 PREROLL = 8  # 句首预留约 0.25s，避免吃掉第一个字
+
+# ---------------- 三道门控参数（治「没说话却冒字」「外放视频被记成你」） ----------------
+# ① VAD 进入阈值：默认 0.5 对贴身领夹麦太松，底噪/呼吸/衣物摩擦的单帧尖峰就能开句。0.6~0.7 更稳。
+VAD_THRESHOLD = float(CFG.get("vad_threshold", 0.6))
+# ② 最短句长：VADIterator 本身无此门槛，单个 32ms 噪声帧即开句 → 这里补上，太短直接判噪声丢弃。
+MIN_SPEECH_MS = int(CFG.get("min_speech_ms", 300))
+# ③ 能量/近场门：贴身麦上「你的声音」又响又干，远处外放又轻又混响。低于此响度判远场，丢弃。
+ENERGY_GATE = bool(CFG.get("energy_gate", True))
+MIN_RMS_DBFS = float(CFG.get("min_rms_dbfs", -45.0))  # 需按你的麦增益校准（见 config 注释）
+# ④ 声纹门：注册机主音色后，逐句算余弦相似度，不像你就丢。注册前自动放行(fail-open)。
+SPEAKER_GATE = bool(CFG.get("speaker_gate", False))
+SPEAKER_THRESHOLD = float(CFG.get("speaker_threshold", 0.35))  # 偏放行；按菜单显示的「上句相似度」校准
+SPEAKER_PROFILE = CFG.get("speaker_profile", "~/voicelog-models/speaker_profile.npy")
+ENROLL_SEC = int(CFG.get("enroll_sec", 25))  # 注册录音时长
 
 
 def log_dir() -> Path:
@@ -135,6 +161,19 @@ def set_vault(path: str) -> bool:
     return True
 
 
+def set_config_flag(key: str, value: bool) -> None:
+    """把 config.yaml 里某布尔开关写成 true/false（保留注释），用于持久化菜单栏的运行时切换。"""
+    try:
+        cfg = BASE / "config.yaml"
+        text = cfg.read_text(encoding="utf-8")
+        new = re.sub(rf"(?m)^{re.escape(key)}:.*$",
+                     f"{key}: {'true' if value else 'false'}", text)
+        if new != text:
+            cfg.write_text(new, encoding="utf-8")
+    except Exception:
+        append_err(f"写回 {key} 失败：" + traceback.format_exc().splitlines()[-1])
+
+
 def resolve_device(dev):
     """把 config 里的 input_device 解析成 sounddevice 能用的编号/None。"""
     if dev is None or dev == "":
@@ -151,8 +190,10 @@ def resolve_device(dev):
 
 
 # ---------------- 幻觉过滤 ----------------
-# whisper 在静音/噪声上会“高置信度”吐出训练集里的字幕水印（实测 no_speech_prob 恒为 0、
-# avg_logprob 还很高，概率信号根本识别不了）—— 唯一可靠的办法是套话黑名单 + 上游 VAD 门控。
+# whisper 在静音/噪声上有两种幻觉：(1) 吐训练集字幕水印(“谢谢观看”)，(2) 锁进复读循环(“慢慢慢…”)。
+# 实测 no_speech_prob 恒为 0、avg_logprob 还很高，概率信号根本识别不了，compression_ratio 只触发升温
+# 重试不丢弃 —— 唯一可靠的办法是：上游门控让噪声压根别进 whisper(时长/能量/声纹) + 下游双层文本过滤
+# (字幕水印黑名单 + 结构性复读检测)。
 _HALLUCINATIONS = {
     "优优独播剧场YoYo Television Series Exclusive",
     "请不吝点赞 订阅 转发 打赏支持明镜与点点栏目",
@@ -177,9 +218,38 @@ _DROP_EXACT = {_norm(s) for s in _HALLUCINATIONS | set(CFG.get("drop_phrases") o
 _DROP_SUB = {d for d in _DROP_EXACT if len(d) >= 8}
 
 
+def _looped(text: str) -> bool:
+    """复读循环检测：whisper 在噪声/近静音上会锁进单 token 自我复读（「慢慢慢…」或整句复读
+    几十遍）。这是开放式的新内容，固定黑名单结构上抓不住 —— 必须看「文本自身的结构」：
+      · 8+ 连续同字              → 单字复读(幻觉是几十上百连排；阈值留到 8 以放过「慢慢慢慢慢」这种正常强调)
+      · 字符多样性崩塌(<0.25)    → 少数字反复出现
+      · 长文本 zlib 压缩比 >3.0  → 整句复读高度可压(自然中文约 1.5~2.5，留足余量)
+    """
+    n = _norm(text)
+    if not n:
+        return False
+    if re.search(r"(.)\1{7,}", n):
+        return True
+    if len(n) >= 12 and len(set(n)) / len(n) < 0.25:
+        return True
+    if len(n) >= 30:
+        b = n.encode("utf-8")
+        if len(b) / max(1, len(zlib.compress(b))) > 3.0:
+            return True
+    return False
+
+
 def is_junk(text: str) -> bool:
     n = _norm(text)
-    return bool(n) and (n in _DROP_EXACT or any(d in n for d in _DROP_SUB))
+    if not n:
+        return False
+    return _looped(text) or n in _DROP_EXACT or any(d in n for d in _DROP_SUB)
+
+
+def _rms_dbfs(x: np.ndarray) -> float:
+    """段平均响度(dBFS)。贴身麦近场说话约 -25~-12，远处外放/底噪低得多 → 近场门的判据。"""
+    rms = float(np.sqrt(np.mean(np.square(x)))) if x.size else 0.0
+    return 20.0 * np.log10(rms + 1e-9)
 
 
 def apply_replace(text: str) -> str:
@@ -234,12 +304,18 @@ class Recorder(threading.Thread):
         self.muted = False
         self.vad = load_silero_vad()
         self.device = resolve_device(INPUT_DEVICE)
+        self.speaker = SpeakerGate(SPEAKER_PROFILE, SPEAKER_THRESHOLD)
+        self.speaker_on = SPEAKER_GATE  # 运行时可切换；注册后无需重启即可开启
+        self._enroll = None  # 注册采集缓冲：None=未注册中；list=正在旁路收集机主语音
 
     def _callback(self, indata, frames, time_info, status):
         if status:
             self.state["status"] = str(status)
+        mono = indata[:, 0].copy()           # 取单声道，拷贝出回调缓冲
+        if self._enroll is not None:
+            self._enroll.append(mono)         # 注册期间旁路采集，不打扰主转写流
         if not self.muted:
-            self.q.put(indata[:, 0].copy())  # 取单声道，拷贝出回调缓冲
+            self.q.put(mono)
 
     def run(self):
         while True:
@@ -252,7 +328,7 @@ class Recorder(threading.Thread):
 
     def _stream_loop(self):
         vad_iter = VADIterator(
-            self.vad, sampling_rate=SR,
+            self.vad, threshold=VAD_THRESHOLD, sampling_rate=SR,
             min_silence_duration_ms=MIN_SILENCE_MS, speech_pad_ms=100,
         )
         preroll = deque(maxlen=PREROLL)
@@ -280,8 +356,39 @@ class Recorder(threading.Thread):
                     buf = []
                     if too_long and not end_now:
                         vad_iter.reset_states()  # 强制切句后重置，避免漏掉后续语音
-                    if utt is not None:
+                    if utt is not None and self._accept(utt):
                         self._transcribe(utt)
+
+    # ---------------- 转写前的三道门：让噪声/外放/他人压根别进 whisper ----------------
+    def _accept(self, utt: np.ndarray) -> bool:
+        if utt.size < MIN_SPEECH_MS * SR // 1000:           # ① 时长门：太短 = 噪声尖峰
+            return self._drop("short")
+        if ENERGY_GATE and _rms_dbfs(utt) < MIN_RMS_DBFS:   # ② 能量门：太远 = 外放视频/底噪
+            return self._drop("far")
+        if self.speaker_on:                                 # ③ 声纹门：不是机主
+            ok, score = self.speaker.verify(utt)
+            self.state["last_score"] = round(score, 3)
+            if not ok:
+                return self._drop("speaker")
+        return True
+
+    def _drop(self, reason: str) -> bool:
+        self.state["dropped"] = self.state.get("dropped", 0) + 1
+        self.state["last_drop"] = reason
+        return False
+
+    def enroll(self):
+        """旁路采集 ENROLL_SEC 秒机主语音并注册声纹；后台线程跑，进度/结果写入 state。"""
+        def _run():
+            self.state["enrolling"] = True
+            self._enroll = []                       # 打开旁路采集（callback 开始喂数据）
+            sd.sleep(ENROLL_SEC * 1000)
+            frames, self._enroll = self._enroll, None
+            wav = np.concatenate(frames) if frames else np.zeros(0, np.float32)
+            self.state["enroll_ok"] = bool(wav.size) and self.speaker.enroll(wav)
+            self.state["enrolled"] = self.speaker.enrolled
+            self.state["enrolling"] = False
+        threading.Thread(target=_run, daemon=True).start()
 
     def _transcribe(self, utt: np.ndarray):
         try:
@@ -312,17 +419,25 @@ class VoiceLogApp(rumps.App):
     def __init__(self):
         super().__init__("🎙", quit_button=None)
         self.state = {"count": 0, "last": "", "err": "", "live": False,
-                      "status": "", "sink": "vault"}
+                      "status": "", "sink": "vault", "dropped": 0,
+                      "enrolling": False, "enrolled": False, "last_score": None}
         self.rec = Recorder(self.state)
+        self.state["enrolled"] = self.rec.speaker.enrolled
         self.rec.start()
 
         self.count_item = rumps.MenuItem("今日已记：0 条")  # 存引用，标题会变
         self.toggle_item = rumps.MenuItem("暂停录音", callback=self.toggle)
         self.tz_menu = self._build_tz_menu()                # 「时区」子菜单，随时切换
         self.vault_item = rumps.MenuItem(self._vault_title(), callback=self.pick_vault)
+        self.enroll_item = rumps.MenuItem(self._enroll_title(), callback=self.do_enroll)
+        self.spk_item = rumps.MenuItem(self._spk_title(), callback=self.toggle_speaker)
         self.menu = [
             self.count_item,
             self.toggle_item,
+            None,  # 分隔线
+            self.enroll_item,
+            self.spk_item,
+            None,  # 分隔线
             self.tz_menu,
             self.vault_item,
             rumps.MenuItem("打开今天的笔记", callback=self.open_note),
@@ -342,6 +457,37 @@ class VoiceLogApp(rumps.App):
         if not p or not set_vault(p):
             return
         self.vault_item.title = self._vault_title()
+
+    # ---------------- 声纹：注册 + 门控开关 ----------------
+    def _enroll_title(self) -> str:
+        if self.state.get("enrolling"):
+            return "● 正在注册…请持续说话"
+        mark = "已注册" if self.state.get("enrolled") else "未注册"
+        return f"注册我的声音（{mark}）"
+
+    def do_enroll(self, _):
+        if self.state.get("enrolling"):
+            return
+        if not self.rec.speaker.available():
+            rumps.alert("声纹功能不可用", "未检测到 speechbrain/torch，请在 venv 里安装 speechbrain。")
+            return
+        rumps.alert("声纹注册",
+                    f"点「好」后，戴着领夹麦、用平常语气连续说话约 {ENROLL_SEC} 秒（随便念点什么）。"
+                    f"完成后自动保存你的音色，再到「声纹门」开启过滤。")
+        self.rec.enroll()
+
+    def _spk_title(self) -> str:
+        s = self.state.get("last_score")
+        tail = f"｜上句相似度 {s}" if (self.rec.speaker_on and s is not None) else ""
+        return f"声纹门：{'开' if self.rec.speaker_on else '关'}{tail}"
+
+    def toggle_speaker(self, _):
+        if not self.rec.speaker.enrolled and not self.rec.speaker_on:
+            rumps.alert("请先注册声音", "声纹门要先「注册我的声音」才有比对基准。")
+            return
+        self.rec.speaker_on = not self.rec.speaker_on
+        set_config_flag("speaker_gate", self.rec.speaker_on)
+        self.spk_item.title = self._spk_title()
 
     @staticmethod
     def _tz_title(tz: str) -> str:
@@ -368,9 +514,15 @@ class VoiceLogApp(rumps.App):
     def tick(self, _):
         on_fallback = self.state.get("sink") == "fallback"
         tag = "（备用盘）" if on_fallback else ""
-        self.count_item.title = f"今日已记：{self.state['count']} 条{tag}"
+        dropped = self.state.get("dropped", 0)
+        drop = f"，滤除 {dropped}" if dropped else ""
+        self.count_item.title = f"今日已记：{self.state['count']} 条{drop}{tag}"
+        self.enroll_item.title = self._enroll_title()  # 注册状态/进度实时刷新
+        self.spk_item.title = self._spk_title()        # 显示上句相似度，便于校准阈值
         if self.state["err"]:
             self.title = "⚠️"
+        elif self.state.get("enrolling"):
+            self.title = "●"  # 正在注册声纹
         elif on_fallback:
             self.title = "🟠"  # 外置盘掉线，正写内置备用盘
         elif self.rec.muted:

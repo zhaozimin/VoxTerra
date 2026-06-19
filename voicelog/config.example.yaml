@@ -23,6 +23,16 @@ input_device: null
 min_silence_ms: 700      # 停顿多久算「一句结束」
 max_utterance_sec: 30    # 单句超过这个秒数强制切一刀
 
+# 三道门控（治「没说话却冒慢慢慢」「外放视频被记成你」）
+vad_threshold: 0.6       # ① VAD 进入阈值，贴身麦建议 0.6~0.7（默认 0.5 太松，噪声误开句）
+min_speech_ms: 300       # ② 最短句长，短于此判噪声丢弃（VADIterator 本身无此门槛）
+energy_gate: true        # ③ 能量/近场门：挡远处外放视频（零 ML，最便宜有效）
+min_rms_dbfs: -45.0      #    响度下限，按菜单滤除数校准
+speaker_gate: false      # ④ 声纹门：注册你的音色后挡近场同语种视频/他人；菜单注册后开启
+speaker_threshold: 0.35  #    余弦相似度阈值，按菜单「上句相似度」校准（偏低更安全）
+speaker_profile: "~/voicelog-models/speaker_profile.npy"
+enroll_sec: 25           #    注册录音时长(秒)
+
 # 术语偏置：抬高这些词的先验，修同音/中英混说误识，顺带压繁体
 initial_prompt: "以下是关于 AI、产品设计与软件开发的简体中文口语记录。常见术语：Claude、Anthropic、Obsidian、MCP。"
 
