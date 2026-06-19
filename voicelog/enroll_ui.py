@@ -39,7 +39,7 @@ class EnrollWindow:
 
         c.addSubview_(make_label(
             NSMakeRect(20, 555, W - 40, 28),
-            "请用平常聊天的语气，慢慢地、自然地朗读；采够音色会自动停止，不必盯着时间。", 13))
+            "用平常聊天的语气自然地读就好——采的是你的音色不是内容，读错没关系；采够会自动停。", 13))
 
         # 朗读稿(只读、可滚动、统一 20pt 系统字体)
         scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(20, 120, W - 40, 420))
