@@ -43,7 +43,9 @@ import i18n
 BASE = Path(__file__).resolve().parent
 CFG = yaml.safe_load((BASE / "config.yaml").read_text(encoding="utf-8")) or {}
 
-VERSION = "0.7.0"
+VERSION = "0.7.1"
+
+ICON_PATH = Path(__file__).resolve().parent / "assets" / "menubar.png"  # 菜单栏模板图(原 logo 抠图)
 
 SR = 16000
 BLOCK = 512  # Silero v5 在 16k 采样率下要求每块正好 512 个采样
@@ -534,7 +536,9 @@ class Recorder(threading.Thread):
 # ---------------- 菜单栏 ----------------
 class VoiceLogApp(rumps.App):
     def __init__(self):
-        super().__init__("🎙", quit_button=None)
+        super().__init__("", quit_button=None)   # 标题留空，用自定义图标
+        self._has_icon = False
+        self._setup_icon()
         self.state = {"count": 0, "last": "", "err": "", "live": False,
                       "status": "", "sink": "vault", "dropped": 0,
                       "enrolling": False, "enrolled": False, "last_score": None}
@@ -573,6 +577,23 @@ class VoiceLogApp(rumps.App):
             rumps.MenuItem(f"VoiceLog v{VERSION}"),  # 版本（无回调=不可点）
             self.quit_item,
         ]
+
+    def _setup_icon(self):
+        """用 logo 模板图当菜单栏图标(替代 emoji)。rumps 把图标写死 20×20 方形会压扁宽 logo，
+        故建好后用 PyObjC 按真实像素宽高比重设尺寸(高约 19pt)。失败则退回 emoji。"""
+        try:
+            if not ICON_PATH.exists():
+                return
+            self._template = True               # 模板模式：深/浅菜单栏自动反色
+            self.icon = str(ICON_PATH)          # rumps 建 _icon_nsimage(默认 20×20)
+            img = self._icon_nsimage
+            reps = img.representations() if img is not None else None
+            if reps:
+                asp = reps[0].pixelsWide() / max(1, reps[0].pixelsHigh())
+                img.setSize_((round(19 * asp), 19))   # 保宽高比
+            self._has_icon = True
+        except Exception:
+            append_err("setup_icon: " + traceback.format_exc().splitlines()[-1])
 
     @staticmethod
     def _vault_title() -> str:
@@ -769,15 +790,17 @@ class VoiceLogApp(rumps.App):
         self.enroll_item.title = self._enroll_title()  # 注册状态/进度实时刷新
         self.spk_item.title = self._spk_title()        # 显示上句相似度，便于校准阈值
         if self.state["err"]:
-            self.title = "⚠️"
+            st = "⚠️"
         elif self.state.get("enrolling"):
-            self.title = "●"  # 正在注册声纹
+            st = "●"            # 正在注册声纹
         elif on_fallback:
-            self.title = "🟠"  # 外置盘掉线，正写内置备用盘
+            st = "🟠"           # 外置盘掉线，正写内置备用盘
         elif self.rec.muted:
-            self.title = "⏸"
+            st = "⏸"
         else:
-            self.title = "🎙"
+            st = ""
+        # 有图标：正常→空标题(只显 logo)，异常→状态符号；无图标→退回 emoji
+        self.title = st if self._has_icon else (st or "🎙")
 
     def toggle(self, sender):
         self.rec.muted = not self.rec.muted

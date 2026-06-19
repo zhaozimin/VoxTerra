@@ -15,6 +15,7 @@
 - `requirements.txt`: 依赖清单(mlx-whisper / silero-vad / sounddevice / speechbrain / rumps …)。
 - `install.sh`: venv 与依赖安装脚本。
 - `README.md` / `claude_prompt.md`: 使用说明 / 给 Agent 的部署提示。
+- `assets/`: 图标资源。`menubar.png`(品牌 logo 抠图→黑+alpha 模板图，菜单栏用) / `icon.png`(白色透明大图，App/Dock 用) / `logo_src.png`(原图留存，便于重生成)。
 - `logs/`: 运行日志(out.log / err.log)，非源码。
 
 ## 数据流(单向，如河流)
