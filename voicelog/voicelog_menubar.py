@@ -19,6 +19,7 @@ VoiceLog · macOS 菜单栏实时语音日志
 import os
 import re
 import sys
+import time
 import zlib
 import queue
 import threading
@@ -44,7 +45,7 @@ import i18n
 # 故配置/日志/声纹必须落在用户可写区。两种形态：
 #   · 打包(.app)：资源在 bundle(_MEIPASS)，数据在 ~/Library/Application Support/VoiceLog
 #   · 源码(开发)：资源与数据都在代码旁——保持旧行为，现有 launchd 部署零改动
-VERSION = "0.8.0"
+VERSION = "0.8.1"
 
 FROZEN = getattr(sys, "frozen", False)
 RES = Path(getattr(sys, "_MEIPASS", "")) if FROZEN else Path(__file__).resolve().parent
@@ -75,6 +76,9 @@ REPLACE = CFG.get("replace") or {}
 INITIAL_PROMPT = CFG.get("initial_prompt", "以下是简体中文普通话的日常口语记录。") or None
 TERMS = list(CFG.get("terms") or [])  # 识别词库：单写的目标词，注入 prompt 从源头偏置识别(零误伤)
 PREROLL = 8  # 句首预留约 0.25s，避免吃掉第一个字
+# 设备掉线自愈：回调持续喂帧=麦还活着。超过这么久没有任何回调=设备掉线/默认设备被切走，
+# 主动抛出交给看门狗重开流——不能依赖 sounddevice 抛异常(CoreAudio 掉线时它只是静默停摆)。
+NO_AUDIO_TIMEOUT_SEC = float(CFG.get("no_audio_timeout_sec", 5))
 
 # ---------------- 三道门控参数（治「没说话却冒字」「外放视频被记成你」） ----------------
 # ① VAD 进入阈值：默认 0.5 对贴身领夹麦太松，底噪/呼吸/衣物摩擦的单帧尖峰就能开句。0.6~0.7 更稳。
@@ -409,13 +413,15 @@ class Recorder(threading.Thread):
         self.q: queue.Queue = queue.Queue()
         self.muted = False
         self.vad = load_silero_vad()
-        self.device = resolve_device(INPUT_DEVICE)
+        self.device = None                       # 每次开流时按 config 重新解析(见 _stream_loop)
+        self._last_audio = time.monotonic()      # 回调心跳：麦最后一次喂帧的时刻(掉线自愈用)
         self.speaker = SpeakerGate(SPEAKER_PROFILE, SPEAKER_THRESHOLD)
         self.speaker_on = SPEAKER_GATE  # 运行时可切换；注册后无需重启即可开启
         self._enroll = None  # 注册采集缓冲：None=未注册中；list=正在旁路收集机主语音
         self._enroll_cancel = False
 
     def _callback(self, indata, frames, time_info, status):
+        self._last_audio = time.monotonic()  # 心跳：只要回调被调用就说明麦还在喂帧(早于静音/注册判断)
         if status:
             self.state["status"] = str(status)
         mono = indata[:, 0].copy()           # 取单声道，拷贝出回调缓冲
@@ -436,6 +442,7 @@ class Recorder(threading.Thread):
                 sd.sleep(3000)  # 设备掉线/出错 → 等 3 秒重连
 
     def _stream_loop(self):
+        self.device = resolve_device(INPUT_DEVICE)  # 每次(重)开按名字片段重解析：设备拔插后编号会变
         vad_iter = VADIterator(
             self.vad, threshold=VAD_THRESHOLD, sampling_rate=SR,
             min_silence_duration_ms=MIN_SILENCE_MS, speech_pad_ms=100,
@@ -447,8 +454,18 @@ class Recorder(threading.Thread):
                             blocksize=BLOCK, device=self.device,
                             callback=self._callback):
             self.state["live"] = True
+            self._last_audio = time.monotonic()  # 刚开流即刷新心跳，避免被上一段静默误判掉线
             while True:
-                x = self.q.get()
+                try:
+                    x = self.q.get(timeout=1.0)
+                except queue.Empty:
+                    # 队列空≠掉线：可能只是没说话或已静音(muted/注册期回调不入队)。
+                    # 用回调心跳辨真假死——回调还在烧=麦活着，继续等；
+                    # 回调停摆超阈值=麦掉线/默认设备被切走，主动抛出让 run() 看门狗重开流(会抓回归来的麦)。
+                    if time.monotonic() - self._last_audio > NO_AUDIO_TIMEOUT_SEC:
+                        self.state["live"] = False
+                        raise RuntimeError(f"audio stalled: no frames for {NO_AUDIO_TIMEOUT_SEC:.0f}s")
+                    continue
                 preroll.append(x)
                 flag = vad_iter(x, return_seconds=False)
                 if flag and "start" in flag:
