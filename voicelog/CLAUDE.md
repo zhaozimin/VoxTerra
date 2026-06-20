@@ -10,6 +10,9 @@
   (设置改 config.yaml,声纹注册走托盘+系统通知)。数据落 `%APPDATA%\VoiceLog`。复用 speaker/i18n。
 - `transcribe_fw.py`: faster-whisper(CTranslate2) 转写封装,接口与 mlx_whisper.transcribe 对齐(吃 16k
   float32,吐文本)。有 N 卡 cuda/float16,否则 cpu/int8。Windows 端的转写引擎,亦可在 Mac 验证。
+- `model_fetch.py`: 跨平台「模型获取」中枢(mac/win 共用)。**绕开 HF/镜像,直接从本项目 GitHub Release
+  下载模型 zip**(国内可达),带进度回调、原子解压;`model_ready` 判本地是否就绪。config 模型项写 `auto`
+  即托管模式(放 …/VoiceLog/models)。是「三层模型兜底」的第一层(应用内一键下)。
 - `speaker.py`: 声纹门控子模块。`SpeakerGate` 用 ECAPA-TDNN(speechbrain) 把语音映射成 192 维音色指纹，注册机主质心后逐句算余弦相似度裁决「是不是机主」。懒加载、fail-open(未注册/故障一律放行)、附「提取质量」自一致性指标。
 - `enroll_ui.py`: 声纹注册 UI 面(PyObjC/Cocoa)。`EnrollWindow` 两阶段：须知页(本地/隐私说明+开始按钮，不录音)→点开始→朗读页(句子+进度条)。纯展示层，采集逻辑在主文件 `Recorder.enroll`(质量驱动)，进度由 rumps.Timer 喂。
 - `replace_ui.py`: 关键词管理 UI 面(PyObjC/Cocoa，**模态**——无 Dock 进程唯有模态窗口能稳拿键盘焦点)。`ReplaceWindow.run_modal()` 返回编辑后的文本，主文件 `parse_corrections`/`write_corrections` 解析为「精确纠错 rules(`错=正`) + 识别词库 terms(单写目标词，注入 prompt)」并写回 config。

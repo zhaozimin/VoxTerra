@@ -38,9 +38,12 @@ from silero_vad import load_silero_vad, VADIterator
 
 from speaker import SpeakerGate
 from transcribe_fw import FasterWhisper, DEFAULT_MODEL
+from model_fetch import model_ready, download_model, WIN_MODEL_URL
 import i18n
 
-VERSION = "0.8.1"
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")  # 关掉会卡死的 hf_xet(ECAPA 若走 HF)
+
+VERSION = "0.9.0"
 
 # ---------------- 路径：只读资源(RES) 与 可写用户数据(DATA) 解耦 ----------------
 # Windows: 数据落 %APPDATA%\VoiceLog;其他平台(便于在 Mac 上验证)落 ~/.voicelog-win。
@@ -65,7 +68,12 @@ CFG = CFG or {}
 SR = 16000
 BLOCK = 512                                       # Silero v5 @16k 要求每块正好 512 样本
 # Windows 用 faster-whisper 模型(与 mac 的 mlx `model` 区分);留空用内置默认。
-MODEL_WIN = CFG.get("model_win") or DEFAULT_MODEL
+# 模型来源:model_win 写 "auto"/留空(打包默认)→ 托管,放 DATA/models,缺失则从 GitHub 下载(国内可达);
+# 写 HF repo 名或本地路径 → 直接用(开发/进阶)。
+_mw = (CFG.get("model_win") or "").strip()
+MANAGED_WIN = _mw.lower() in ("", "auto")
+MODEL_LOCAL = DATA / "models" / "whisper-ct2-turbo"
+MODEL_WIN = str(MODEL_LOCAL) if MANAGED_WIN else _mw
 MODEL_DIR = os.path.expanduser(CFG.get("model_win_dir") or "~/voicelog-models/faster-whisper")
 MAX_UTT_SEC = float(CFG.get("max_utterance_sec", 30))
 MIN_SILENCE_MS = int(CFG.get("min_silence_ms", 700))
@@ -317,6 +325,8 @@ class Recorder(threading.Thread):
         return False
 
     def _transcribe(self, utt: np.ndarray):
+        if MANAGED_WIN and not model_ready(MODEL_LOCAL):
+            return                                # 模型未下载,别硬转;托盘菜单提示用户去下
         try:
             text = self.tx.transcribe(utt, language=i18n.whisper_lang(),
                                       initial_prompt=current_prompt())
@@ -401,6 +411,8 @@ class TrayApp:
               + (i18n.t("drop", d=self.state["dropped"]) if self.state["dropped"] else ""),
               None, enabled=False),
             I(lambda _: i18n.t("resume") if self.rec.muted else i18n.t("pause"), self._toggle),
+            I(lambda _: self._model_title(), self._download_model_click,
+              enabled=lambda _: not self.state.get("model_dl")),
             pystray.Menu.SEPARATOR,
             I(lambda _: (i18n.t("enroll_running") if self.state["enrolling"]
                          else i18n.t("enroll_item",
@@ -420,6 +432,34 @@ class TrayApp:
         s = self.state.get("last_score")
         tail = i18n.t("spk_score", s=s) if (self.rec.speaker_on and s is not None) else ""
         return i18n.t("spk_gate", state=i18n.t("on") if self.rec.speaker_on else i18n.t("off")) + tail
+
+    # ---------------- 语音模型：检查 / 从 GitHub 下载（国内可达，绕开 HF） ----------------
+    def _model_title(self):
+        if not MANAGED_WIN or model_ready(MODEL_LOCAL):
+            return i18n.t("model_check")
+        if self.state.get("model_dl"):
+            return i18n.t("model_dling", p=self.state.get("model_pct", 0))
+        return i18n.t("model_get")
+
+    def _download_model_click(self, icon, item):
+        if model_ready(MODEL_LOCAL):
+            icon.notify(i18n.t("model_check"), "VoiceLog")
+            return
+        if self.state.get("model_dl"):
+            return
+        self.state["model_dl"] = True
+        self.state["model_pct"] = 0
+        icon.update_menu()
+        icon.notify(i18n.t("model_dling", p=0), "VoiceLog")
+
+        def run():
+            ok = download_model(WIN_MODEL_URL, MODEL_LOCAL,
+                                lambda f: self.state.__setitem__("model_pct", round(f * 100)))
+            self.state["model_dl"] = False
+            icon.notify(i18n.t("model_done") if ok else i18n.t("model_fail_t"), "VoiceLog")
+            icon.update_menu()
+
+        threading.Thread(target=run, daemon=True).start()
 
     # ---------------- 回调 ----------------
     def _toggle(self, icon, item):
@@ -473,7 +513,15 @@ class TrayApp:
         while True:
             time.sleep(2)
             try:
-                tag = " · ⚠" if self.state["err"] else (" · ⏸" if self.rec.muted else "")
+                if MANAGED_WIN and not model_ready(MODEL_LOCAL):
+                    tag = (f" · ⬇{self.state.get('model_pct', 0)}%" if self.state.get("model_dl")
+                           else " · ⚠ 需下载模型")
+                elif self.state["err"]:
+                    tag = " · ⚠"
+                elif self.rec.muted:
+                    tag = " · ⏸"
+                else:
+                    tag = ""
                 self.icon.title = f"VoiceLog · {i18n.t('count', n=self.state['count']).strip()}{tag}"
                 self.icon.update_menu()
             except Exception:

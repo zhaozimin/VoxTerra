@@ -4,7 +4,7 @@
 ;  TODO(移植时): 确认 dist 路径;补 .ico;可选「开机自启」复选框写注册表 Run 键。
 ; ============================================================================
 #define MyAppName "VoiceLog"
-#define MyAppVersion "0.8.1"
+#define MyAppVersion "0.9.0"
 #define MyAppPublisher "Zimin Zhao"
 #define MyAppExeName "VoiceLog.exe"
 

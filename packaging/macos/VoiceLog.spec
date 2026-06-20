@@ -68,12 +68,12 @@ app = BUNDLE(
     name="VoiceLog.app",
     icon=os.path.join(SPEC_DIR, "VoiceLog.icns"),
     bundle_identifier="com.zhaozimin.voicelog",
-    version="0.8.1",
+    version="0.9.0",
     info_plist={
         "CFBundleName": "VoiceLog",
         "CFBundleDisplayName": "VoiceLog",
-        "CFBundleShortVersionString": "0.8.1",
-        "CFBundleVersion": "0.8.1",
+        "CFBundleShortVersionString": "0.9.0",
+        "CFBundleVersion": "0.9.0",
         "LSUIElement": True,                 # 菜单栏常驻,无 Dock 图标
         "LSMinimumSystemVersion": "13.0",
         "NSMicrophoneUsageDescription":

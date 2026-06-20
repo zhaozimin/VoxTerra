@@ -2,6 +2,19 @@
 
 版本规则：小改 +0.1，大改 +1.0。
 
+## v0.9.0 — 2026-06-19
+模型分发加固（三层），治「装了下不动模型 = 看起来坏了」。根因：粉丝多在国内，而模型在 HuggingFace 上，
+hf_xet 会卡死、hf-mirror 也与新版 huggingface_hub 不兼容。
+- **新增 `voicelog/model_fetch.py`**：跨平台模型获取中枢。**绕开 HF/镜像，直接从本项目 GitHub Release
+  下载模型 zip**（国内可达、可浏览器手动下、可放进离线包），带进度回调、原子解压。mac/win 共用。
+- **三层兜底**：① 应用内一键下载（菜单/托盘「下载语音模型」带进度 + 失败给手动指引）
+  ② GitHub Release `models` tag 托管模型 zip（手动下载备用）③ 全离线版安装包（模型已内置，零下载）。
+- **config 模型项改 `auto`**（默认）：托管模式，模型放用户目录 `…/VoiceLog/models`，已存则复用不重下；
+  也可填 HF repo 名或本地路径（进阶）。新增 macOS「下载语音模型」菜单项、Windows 托盘同名项。
+- **关掉 hf_xet**（`HF_HUB_DISABLE_XET=1`）：避免 ECAPA 等仍走 HF 时卡死。
+- 默认模型统一 turbo（mac: MLX turbo / win: CT2 turbo），更快、对无 N 卡更友好。
+- 版本号 → `0.9.0`（mac/win 同步）。
+
 ## v0.8.1-win-beta — 2026-06-19
 新增 Windows 实验版（Beta，未签名/未真机验证）。与 macOS 同一 0.8.1 功能集的跨平台移植。
 - **新增 `voicelog/voicelog_win.py`**：跨平台托盘入口。复用内核 `speaker`/`i18n`/`silero_vad`/`sounddevice`

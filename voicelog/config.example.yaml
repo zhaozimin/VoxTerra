@@ -4,16 +4,12 @@
 # 文字稿写到哪里（可在菜单栏「保存位置」随时改，会自动写回这里）
 vault_path: "~/VoiceLog/声音日志"
 
-# 语音识别模型（macOS / Apple Silicon / MLX）
-# 填 HF 仓库名首次会联网下载；或填本地模型目录的绝对路径（离线、最稳）。
-# large-v3 最准；想更快用 "mlx-community/whisper-large-v3-turbo"
-model: "mlx-community/whisper-large-v3-turbo"
-
-# 语音识别模型（Windows / faster-whisper，仅 Windows 版读取，macOS 忽略）
-# 留空=用内置默认 large-v3。想更快(尤其无 N 卡)可换 turbo 的 CT2 版：
-#   "deepdml/faster-whisper-large-v3-turbo-ct2"
-model_win: ""
-# Windows 模型缓存目录（留空=用默认）
+# 语音识别模型 —— "auto"(默认)= 应用自动托管：从本项目 GitHub Release 下载 turbo 模型到用户目录，
+# 国内可达、绕开不稳定的 HuggingFace。菜单/托盘有「下载语音模型」按钮，带进度。
+# 也可填：HF 仓库名(联网下载) 或 本地模型目录的绝对路径(离线最稳，进阶用法)。
+model: "auto"          # macOS / MLX
+model_win: "auto"      # Windows / faster-whisper(CT2)；与上面 model 互不影响，各管各的平台
+# 模型缓存/存放目录（留空=用默认）
 model_win_dir: ""
 
 # ===== 语言（界面 / 转写 分开，互不影响；都可在菜单栏随时切换、写回这里）=====

@@ -34,10 +34,13 @@ import numpy as np
 import sounddevice as sd
 import yaml
 import rumps
+# 关掉会在国内卡死的 hf_xet(ECAPA 声纹模型若走 HF;whisper 模型改走 GitHub,见 model_fetch)
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 import mlx_whisper
 from silero_vad import load_silero_vad, VADIterator
 
 from speaker import SpeakerGate
+from model_fetch import model_ready, download_model, MAC_MODEL_URL, model_hint
 import i18n
 
 # ---------------- 路径：只读资源(RES) 与 可写用户数据(DATA) 解耦 ----------------
@@ -45,7 +48,7 @@ import i18n
 # 故配置/日志/声纹必须落在用户可写区。两种形态：
 #   · 打包(.app)：资源在 bundle(_MEIPASS)，数据在 ~/Library/Application Support/VoiceLog
 #   · 源码(开发)：资源与数据都在代码旁——保持旧行为，现有 launchd 部署零改动
-VERSION = "0.8.1"
+VERSION = "0.9.0"
 
 FROZEN = getattr(sys, "frozen", False)
 RES = Path(getattr(sys, "_MEIPASS", "")) if FROZEN else Path(__file__).resolve().parent
@@ -67,6 +70,12 @@ CFG = CFG or {}
 SR = 16000
 BLOCK = 512  # Silero v5 在 16k 采样率下要求每块正好 512 个采样
 MODEL = CFG.get("model", "mlx-community/whisper-large-v3-turbo")
+# 模型来源:config 写 "auto"(打包默认)→ 本程序托管,放 DATA/models,缺失则从 GitHub 下载(国内可达);
+# 写 HF repo 名或本地路径 → 直接用(开发/进阶,行为不变)。
+MANAGED_MODEL = str(MODEL).strip().lower() == "auto"
+MODEL_LOCAL = DATA / "models" / "whisper-mlx-turbo"
+if MANAGED_MODEL:
+    MODEL = str(MODEL_LOCAL)
 MAX_UTT_SEC = float(CFG.get("max_utterance_sec", 30))
 MIN_SILENCE_MS = int(CFG.get("min_silence_ms", 700))
 INPUT_DEVICE = CFG.get("input_device", None)  # None=系统默认；可填编号或名字片段(如 "DJI")
@@ -545,6 +554,9 @@ class Recorder(threading.Thread):
         self._enroll = None   # 立刻停旁路采集→实时转写当即恢复，不等 worker 下一拍(最多 200ms)
 
     def _transcribe(self, utt: np.ndarray):
+        if MANAGED_MODEL and not model_ready(MODEL):
+            self.state["need_model"] = True   # 模型未下载,别硬转(会抛错);菜单提示用户去下
+            return
         try:
             result = mlx_whisper.transcribe(
                 utt, path_or_hf_repo=MODEL, language=i18n.whisper_lang(),  # 转写语言跟随所选 UI 语言
@@ -606,11 +618,13 @@ class VoiceLogApp(rumps.App):
         self.spk_item = rumps.MenuItem(self._spk_title(), callback=self.toggle_speaker)
         self.kw_item = rumps.MenuItem(i18n.t("keywords"), callback=self.do_replace)
         self.note_item = rumps.MenuItem(i18n.t("open_note"), callback=self.open_note)
+        self.model_item = rumps.MenuItem(self._model_title(), callback=self.do_model)
         self.quit_item = rumps.MenuItem(i18n.t("quit"), callback=self.quit_app)
         self.menu = [
             self.count_item,
             self.toggle_item,
             None,  # 分隔线
+            *([self.model_item] if MANAGED_MODEL else []),  # 托管模式才显示「下载模型」
             self.enroll_item,
             self.spk_item,
             None,  # 分隔线
@@ -870,7 +884,19 @@ class VoiceLogApp(rumps.App):
         self.count_item.title = i18n.t("count", n=self.state["count"]) + drop + tag
         self.enroll_item.title = self._enroll_title()  # 注册状态/进度实时刷新
         self.spk_item.title = self._spk_title()        # 显示上句相似度，便于校准阈值
-        if self.state["err"]:
+        if MANAGED_MODEL:                              # 模型菜单标题 + 下载结果弹窗(主线程)
+            self.model_item.title = self._model_title()
+            r = self.state.pop("model_result", None)
+            if r == "ok":
+                rumps.notification("VoiceLog", "", i18n.t("model_done"))
+            elif r == "fail":
+                rumps.alert(i18n.t("model_fail_t"), model_hint(MAC_MODEL_URL, str(MODEL)))
+        model_missing = MANAGED_MODEL and not model_ready(MODEL)
+        if self.state.get("model_dl"):
+            st = "⬇"            # 正在下载模型
+        elif model_missing:
+            st = "⚠️"           # 模型未下载,点菜单「下载语音模型」
+        elif self.state["err"]:
             st = "⚠️"
         elif self.state.get("enrolling"):
             st = "●"            # 正在注册声纹
@@ -886,6 +912,31 @@ class VoiceLogApp(rumps.App):
     def toggle(self, sender):
         self.rec.muted = not self.rec.muted
         sender.title = i18n.t("resume") if self.rec.muted else i18n.t("pause")
+
+    # ---------------- 语音模型：检查 / 从 GitHub 下载（国内可达，绕开 HF） ----------------
+    def _model_title(self) -> str:
+        if not MANAGED_MODEL or model_ready(MODEL):
+            return i18n.t("model_check")
+        if self.state.get("model_dl"):
+            return i18n.t("model_dling", p=self.state.get("model_pct", 0))
+        return i18n.t("model_get")
+
+    def do_model(self, _):
+        if model_ready(MODEL):
+            rumps.alert("VoiceLog", i18n.t("model_check"))
+            return
+        if self.state.get("model_dl"):
+            return
+        self.state["model_dl"] = True
+        self.state["model_pct"] = 0
+        threading.Thread(target=self._download_model, daemon=True).start()
+
+    def _download_model(self):
+        """后台线程下载,只改 state;结果由主线程的 tick 弹窗(避免跨线程碰 UI)。"""
+        ok = download_model(MAC_MODEL_URL, MODEL,
+                            lambda f: self.state.__setitem__("model_pct", round(f * 100)))
+        self.state["model_dl"] = False
+        self.state["model_result"] = "ok" if ok else "fail"
 
     def open_note(self, _):
         note = VAULT / f"{now():%Y-%m-%d}.md"
