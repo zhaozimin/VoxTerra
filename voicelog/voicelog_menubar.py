@@ -95,7 +95,7 @@ if MANAGED_MODEL:
 MAX_UTT_SEC = float(CFG.get("max_utterance_sec", 30))
 MIN_SILENCE_MS = int(CFG.get("min_silence_ms", 700))
 INPUT_DEVICE = CFG.get("input_device", None)  # None=系统默认；可填编号或名字片段(如 "DJI")
-VAULT = Path(os.path.expanduser(CFG.get("vault_path") or "~/VoiceLog/声音日志"))
+VAULT = Path(os.path.expanduser(CFG.get("vault_path") or "~/Desktop/言壤语音日志"))
 FALLBACK = Path(os.path.expanduser(CFG.get("fallback_path", "~/voicelog-fallback")))
 REPLACE = CFG.get("replace") or {}
 INITIAL_PROMPT = CFG.get("initial_prompt", "以下是简体中文普通话的日常口语记录。") or None
