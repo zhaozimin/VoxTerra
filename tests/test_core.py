@@ -19,6 +19,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "voicelog"))
 import model_fetch          # noqa: E402
 import update_check         # noqa: E402
+import auto_update          # noqa: E402
 import i18n                 # noqa: E402
 
 
@@ -125,6 +126,34 @@ class TestDownloadModel(unittest.TestCase):
 
 
 # ============================================================================
+#  自动更新：下载地址拼装 / .app 根推断(纯函数) + 校验闸负向用例
+# ============================================================================
+class TestAutoUpdate(unittest.TestCase):
+    def test_asset_url_mac(self):
+        u = auto_update.asset_url("0.9.4", "mac")
+        self.assertEqual(u, "https://github.com/zhaozimin/Recorder/releases/download/v0.9.4/VoiceLog-0.9.4.dmg")
+        self.assertEqual(auto_update.asset_url("v0.9.4", "mac"), u)   # 容忍 v 前缀
+
+    def test_asset_url_win(self):
+        self.assertEqual(
+            auto_update.asset_url("0.9.4", "win"),
+            "https://github.com/zhaozimin/Recorder/releases/download/v0.9.4-win-beta/VoiceLog-0.9.4-Setup.exe")
+
+    def test_app_bundle_root(self):
+        self.assertEqual(
+            auto_update.app_bundle_root("/Applications/言壤.app/Contents/MacOS/VoiceLog"),
+            "/Applications/言壤.app")
+        self.assertIsNone(auto_update.app_bundle_root("/Users/x/voicelog/voicelog_menubar.py"))
+
+    @unittest.skipUnless(sys.platform == "darwin", "codesign 仅 macOS")
+    def test_verify_rejects_non_app(self):
+        # 校验闸对不存在/非签名路径必须判否(防把垃圾当更新覆盖上去)
+        self.assertFalse(auto_update.verify_macos_app("/tmp/no_such_voicelog.app"))
+        d = tempfile.mkdtemp()
+        self.assertFalse(auto_update.verify_macos_app(d))
+
+
+# ============================================================================
 #  i18n：三语键齐全(无漏翻) + 关键文案
 # ============================================================================
 class TestI18nParity(unittest.TestCase):
@@ -141,14 +170,19 @@ class TestI18nParity(unittest.TestCase):
 
     def test_new_keys_present(self):
         for k in ("model_check", "model_get", "model_dling", "model_missing",
-                  "model_missing_t", "model_missing_b",
-                  "upd_checking", "upd_latest", "upd_avail"):
+                  "model_missing_t", "model_missing_b", "cur_version",
+                  "upd_checking", "upd_latest", "upd_avail", "upd_downloading",
+                  "upd_confirm_t", "upd_confirm_b", "upd_ok", "upd_cancel",
+                  "upd_dl_fail", "upd_fail_t", "upd_dev"):
             self.assertIn(k, i18n.STRINGS["zh"])
 
     def test_format_placeholders(self):
         i18n.set_language("zh")
         self.assertIn("42", i18n.t("model_dling", p=42))
-        self.assertIn("0.9.4", i18n.t("upd_avail", v="0.9.4"))
+        s = i18n.t("upd_avail", app="言壤", v="0.9.4")
+        self.assertIn("0.9.4", s)
+        self.assertIn("言壤", s)
+        self.assertIn("v0.9.3", i18n.t("cur_version", app="言壤", v="0.9.3"))
 
 
 # ============================================================================

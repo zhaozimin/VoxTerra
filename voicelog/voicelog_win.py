@@ -21,6 +21,7 @@ import sys
 import zlib
 import queue
 import time
+import tempfile
 import threading
 import datetime
 import subprocess
@@ -40,6 +41,7 @@ from speaker import SpeakerGate
 from transcribe_fw import FasterWhisper, DEFAULT_MODEL
 from model_fetch import model_ready, model_status_key, download_model, WIN_MODEL_URL
 import update_check
+import auto_update
 import i18n
 
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")  # 关掉会卡死的 hf_xet(ECAPA 若走 HF)
@@ -420,18 +422,15 @@ class TrayApp:
             I(lambda _: self._model_title(), self._download_model_click,
               enabled=lambda _: not self.state.get("model_dl")),
             pystray.Menu.SEPARATOR,
-            I(lambda _: (i18n.t("enroll_running") if self.state["enrolling"]
-                         else i18n.t("enroll_item",
-                                     mark=(i18n.t("mark_done") if self.state["enrolled"]
-                                           else i18n.t("mark_todo")))),
+            I(lambda _: self._enroll_title(),
               self._enroll, enabled=lambda _: not self.state["enrolling"]),
             I(lambda _: self._spk_title(), self._toggle_speaker),
             pystray.Menu.SEPARATOR,
             I(i18n.t("open_note"), self._open_note),
             I("打开配置文件 / Open config", self._open_config),
             pystray.Menu.SEPARATOR,
-            I(f"{i18n.t('app_name')} v{VERSION} (Windows Beta)", None, enabled=False),
-            I(lambda _: self._update_title(), self._open_releases),  # 更新提示
+            I(f"{i18n.t('cur_version', app=i18n.t('app_name'), v=VERSION)} (Windows Beta)", None, enabled=False),
+            I(lambda _: self._update_title(), self._do_update),  # 更新提示/自动更新
             I("📣 作者主页：zhaozimin.cn", self._open_homepage),
             I("🪨 Obsidian 资料库：guangtou.me", self._open_vault_site),
             I("🐱 GitHub：github.com/zhaozimin", self._open_github),
@@ -440,35 +439,88 @@ class TrayApp:
 
     def _spk_title(self):
         s = self.state.get("last_score")
+        # 圈色：关=🔴；开且上句相似度低于阈值(识别度不高)=🟡；开且正常=🟢
+        if not self.rec.speaker_on:
+            dot = "🔴"
+        elif s is not None and s < SPEAKER_THRESHOLD:
+            dot = "🟡"
+        else:
+            dot = "🟢"
         tail = i18n.t("spk_score", s=s) if (self.rec.speaker_on and s is not None) else ""
-        return i18n.t("spk_gate", state=i18n.t("on") if self.rec.speaker_on else i18n.t("off")) + tail
+        state = i18n.t("on") if self.rec.speaker_on else i18n.t("off")
+        return f"{dot} " + i18n.t("spk_gate", state=state) + tail
+
+    def _enroll_title(self):
+        if self.state["enrolling"]:
+            return i18n.t("enroll_running")
+        if self.state["enrolled"]:
+            return "🟢 " + i18n.t("enroll_item", mark=i18n.t("mark_done"))   # 已注册=绿圈
+        return i18n.t("enroll_item", mark=i18n.t("mark_todo"))
 
     # ---------------- 语音模型：检查 / 从 GitHub 下载（国内可达，绕开 HF） ----------------
+    def _model_name(self):
+        """当前所用模型的友好名(目录名/HF repo 名末段)。"""
+        return Path(str(MODEL_WIN)).name or str(MODEL_WIN)
+
     def _model_title(self):
-        # 四态常显，绝不黑盒。判定逻辑收敛在 model_status_key(与 mac 共用,可单测)。
+        # 四态常显，绝不黑盒。判定收敛在 model_status_key(与 mac 共用,可单测)。
         key = model_status_key(bool(self.state.get("model_dl")), model_ready(MODEL_WIN), MANAGED_WIN)
-        return i18n.t(key, p=self.state.get("model_pct", 0)) if key == "model_dling" else i18n.t(key)
+        if key == "model_dling":
+            return i18n.t(key, p=self.state.get("model_pct", 0))
+        if key == "model_check":
+            return i18n.t(key, m=self._model_name())
+        return i18n.t(key)
 
     # ---------------- 更新提示：只查不装，给提示 + 跳下载页 ----------------
     def _check_update(self):
-        latest = update_check.latest_version()
+        latest = os.environ.get("VOICELOG_FAKE_LATEST") or update_check.latest_version()
         self.state["update_checked"] = True
         if latest and update_check.is_newer(latest, VERSION):
             self.state["update_latest"] = latest
 
     def _update_title(self):
+        if self.state.get("updating"):
+            return i18n.t("upd_downloading", p=self.state.get("update_pct", 0))
         latest = self.state.get("update_latest")
+        app = i18n.t("app_name")
         if latest:
-            return i18n.t("upd_avail", v=latest)
-        return i18n.t("upd_latest") if self.state.get("update_checked") else i18n.t("upd_checking")
+            return i18n.t("upd_avail", app=app, v=latest)
+        if self.state.get("update_checked"):
+            return i18n.t("upd_latest", app=app, v=VERSION)
+        return i18n.t("upd_checking")
 
     def _open_releases(self, icon=None, item=None):
         import webbrowser
         webbrowser.open(update_check.RELEASES_PAGE)
 
+    def _do_update(self, icon, item):
+        """下载新 Setup.exe → 运行(Inno 自己覆盖)→ 退出托盘。pystray 无对话框,安装器即确认 UI。"""
+        latest = self.state.get("update_latest")
+        if not latest:
+            self._open_releases()
+            return
+        if self.state.get("updating"):
+            return
+        self.state["updating"] = True
+        self.state["update_pct"] = 0
+
+        def run():
+            icon.notify(i18n.t("upd_downloading", p=0), i18n.t("app_name"))
+            exe = Path(tempfile.gettempdir()) / f"VoiceLog-{latest}-Setup.exe"
+            ok = auto_update.download_file(
+                auto_update.asset_url(latest, "win"), exe,
+                lambda f: self.state.__setitem__("update_pct", round(f * 100)))
+            if ok and auto_update.run_windows_installer(str(exe)):
+                icon.stop()          # 退出托盘,安装器(Inno)接管覆盖
+            else:
+                self.state["updating"] = False
+                icon.notify(i18n.t("upd_dl_fail"), i18n.t("upd_fail_t"))
+
+        threading.Thread(target=run, daemon=True).start()
+
     def _download_model_click(self, icon, item):
         if model_ready(MODEL_WIN):
-            icon.notify(i18n.t("model_check"), i18n.t("app_name"))            # 已就绪：确认状态
+            icon.notify(i18n.t("model_check", m=self._model_name()), i18n.t("app_name"))   # 已就绪
             return
         if not MANAGED_WIN:
             icon.notify(i18n.t("model_missing_b"), i18n.t("model_missing_t"))  # 直连但路径无模型

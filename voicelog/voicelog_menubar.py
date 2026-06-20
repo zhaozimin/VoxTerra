@@ -22,6 +22,7 @@ import sys
 import time
 import zlib
 import queue
+import tempfile
 import threading
 import datetime
 import subprocess
@@ -42,6 +43,7 @@ from silero_vad import load_silero_vad, VADIterator
 from speaker import SpeakerGate
 from model_fetch import model_ready, model_status_key, download_model, MAC_MODEL_URL, model_hint
 import update_check
+import auto_update
 import i18n
 
 # ---------------- 路径：只读资源(RES) 与 可写用户数据(DATA) 解耦 ----------------
@@ -624,13 +626,13 @@ class VoiceLogApp(rumps.App):
         self.note_item = rumps.MenuItem(i18n.t("open_note"), callback=self.open_note)
         self.model_item = rumps.MenuItem(self._model_title(), callback=self.do_model)
         self.quit_item = rumps.MenuItem(i18n.t("quit"), callback=self.quit_app)
-        self.version_item = rumps.MenuItem(f"{i18n.t('app_name')} v{VERSION}")  # 无回调=不可点
-        self.update_item = rumps.MenuItem(i18n.t("upd_checking"), callback=self.open_releases)  # 更新提示
+        self.version_item = rumps.MenuItem(i18n.t("cur_version", app=i18n.t("app_name"), v=VERSION))  # 无回调=不可点
+        self.update_item = rumps.MenuItem(i18n.t("upd_checking"), callback=self.do_update)  # 更新提示/自动更新
         threading.Thread(target=self._check_update, daemon=True).start()        # 启动即后台查新版
         self.ad_item = rumps.MenuItem("作者主页：zhaozimin.cn", callback=self.open_homepage)
         self._style_ad(self.ad_item, "📣 作者主页：zhaozimin.cn", (0.39, 0.58, 0.86))      # 柔和蓝
         self.ad2_item = rumps.MenuItem("Obsidian 资料库：guangtou.me", callback=self.open_vault_site)
-        self._style_ad(self.ad2_item, "🪨 Obsidian 资料库：guangtou.me", (0.40, 0.72, 0.52))  # 柔和绿·黑曜石
+        self._style_ad(self.ad2_item, "🪨 Obsidian 资料库：guangtou.me", (0.62, 0.47, 0.82))  # 柔和紫·黑曜石
         self.ad3_item = rumps.MenuItem("GitHub：github.com/zhaozimin", callback=self.open_github)
         self._style_ad(self.ad3_item, "🐱 GitHub：github.com/zhaozimin", (0.90, 0.70, 0.20))  # 柔和黄·Octocat 小猫
         self.menu = [
@@ -690,8 +692,9 @@ class VoiceLogApp(rumps.App):
     def _enroll_title(self) -> str:
         if self.state.get("enrolling"):
             return i18n.t("enroll_running")
-        mark = i18n.t("mark_done") if self.state.get("enrolled") else i18n.t("mark_todo")
-        return i18n.t("enroll_item", mark=mark)
+        if self.state.get("enrolled"):
+            return "🟢 " + i18n.t("enroll_item", mark=i18n.t("mark_done"))   # 已注册=绿圈
+        return i18n.t("enroll_item", mark=i18n.t("mark_todo"))
 
     def do_enroll(self, _):
         if self.state.get("enrolling") or getattr(self, "_enroll_win", None):
@@ -762,9 +765,16 @@ class VoiceLogApp(rumps.App):
 
     def _spk_title(self) -> str:
         s = self.state.get("last_score")
+        # 圈色：关=🔴；开且上句相似度低于阈值(识别度不高)=🟡；开且正常=🟢
+        if not self.rec.speaker_on:
+            dot = "🔴"
+        elif s is not None and s < SPEAKER_THRESHOLD:
+            dot = "🟡"
+        else:
+            dot = "🟢"
         tail = i18n.t("spk_score", s=s) if (self.rec.speaker_on and s is not None) else ""
         state = i18n.t("on") if self.rec.speaker_on else i18n.t("off")
-        return i18n.t("spk_gate", state=state) + tail
+        return f"{dot} " + i18n.t("spk_gate", state=state) + tail
 
     def toggle_speaker(self, _):
         if not self.rec.speaker.enrolled and not self.rec.speaker_on:
@@ -902,7 +912,12 @@ class VoiceLogApp(rumps.App):
         self.enroll_item.title = self._enroll_title()  # 注册状态/进度实时刷新
         self.spk_item.title = self._spk_title()        # 显示上句相似度，便于校准阈值
         self.model_item.title = self._model_title()   # 常显:任何模式都刷新模型状态(主线程)
-        self.update_item.title = self._update_title()  # 更新提示:检查中→已最新/有新版(主线程)
+        self._refresh_update_item()                    # 更新提示:检查中→✅已最新(绿)/🆕有新版(主线程)
+        if self.state.pop("update_apply", False):     # 新版已就位 → 退出本进程,helper 接力替换+重启
+            rumps.quit_application()
+        ur = self.state.pop("update_result", None)    # 自动更新失败 → 弹窗告知
+        if ur:
+            rumps.alert(i18n.t("upd_fail_t"), ur)
         if MANAGED_MODEL:                              # 下载结果弹窗只在托管模式有意义
             r = self.state.pop("model_result", None)
             if r == "ok":
@@ -932,14 +947,22 @@ class VoiceLogApp(rumps.App):
         sender.title = i18n.t("resume") if self.rec.muted else i18n.t("pause")
 
     # ---------------- 语音模型：检查 / 从 GitHub 下载（国内可达，绕开 HF） ----------------
+    def _model_name(self) -> str:
+        """当前所用模型的友好名(目录名/HF repo 名末段)，让用户知道在用哪个模型。"""
+        return Path(str(MODEL)).name or str(MODEL)
+
     def _model_title(self) -> str:
-        # 四态常显，让用户一眼确知本地模型状态，绝不黑盒。判定逻辑收敛在 model_status_key(可单测)。
+        # 四态常显，让用户一眼确知本地模型状态，绝不黑盒。判定收敛在 model_status_key(可单测)。
         key = model_status_key(bool(self.state.get("model_dl")), model_ready(MODEL), MANAGED_MODEL)
-        return i18n.t(key, p=self.state.get("model_pct", 0)) if key == "model_dling" else i18n.t(key)
+        if key == "model_dling":
+            return i18n.t(key, p=self.state.get("model_pct", 0))
+        if key == "model_check":
+            return i18n.t(key, m=self._model_name())     # 🟢 已就绪：<模型名>
+        return i18n.t(key)
 
     def do_model(self, _):
         if model_ready(MODEL):
-            rumps.alert(i18n.t("app_name"), i18n.t("model_check"))           # 已就绪：确认状态
+            rumps.alert(i18n.t("app_name"), i18n.t("model_check", m=self._model_name()))   # 已就绪：确认状态
             return
         if not MANAGED_MODEL:
             rumps.alert(i18n.t("model_missing_t"), i18n.t("model_missing_b"))  # 直连但路径无模型
@@ -959,22 +982,67 @@ class VoiceLogApp(rumps.App):
 
     # ---------------- 更新提示：只查不装，给提示 + 跳下载页 ----------------
     def _check_update(self):
-        """后台线程查最新版,只写 state;由主线程 tick 反映到菜单(不跨线程碰 UI)。失败静默。"""
-        latest = update_check.latest_version()
+        """后台线程查最新版,只写 state;由主线程 tick 反映到菜单(不跨线程碰 UI)。失败静默。
+        VOICELOG_FAKE_LATEST=<版本> 可强制模拟「有新版」用于本地预览/QA,生产不设此变量则无影响。"""
+        latest = os.environ.get("VOICELOG_FAKE_LATEST") or update_check.latest_version()
         self.state["update_checked"] = True
         if latest and update_check.is_newer(latest, VERSION):
             self.state["update_latest"] = latest
 
-    def _update_title(self) -> str:
+    def _refresh_update_item(self):
+        """更新提示常显(主线程刷新)：下载中=进度；有新版=琥珀黄；已最新=绿；检查中=默认。"""
+        app = i18n.t("app_name")
+        if self.state.get("updating"):
+            self.update_item.title = i18n.t("upd_downloading", p=self.state.get("update_pct", 0))
+            return
         latest = self.state.get("update_latest")
         if latest:
-            return i18n.t("upd_avail", v=latest)        # 🆕 有新版本 vX — 点此更新
-        if self.state.get("update_checked"):
-            return i18n.t("upd_latest")                 # ✓ 已是最新版
-        return i18n.t("upd_checking")                   # 检查更新中…
+            self._style_ad(self.update_item, i18n.t("upd_avail", app=app, v=latest), (0.92, 0.66, 0.15))  # ⚠️ 琥珀黄
+        elif self.state.get("update_checked"):
+            self._style_ad(self.update_item, i18n.t("upd_latest", app=app, v=VERSION), (0.30, 0.72, 0.40))  # ✅ 绿
+        else:
+            self.update_item.title = i18n.t("upd_checking")          # 检查更新中…
 
-    def open_releases(self, _):
+    def open_releases(self, _=None):
         webbrowser.open(update_check.RELEASES_PAGE)
+
+    # ---------------- 自动更新：确认 → 下载 → 校验 → 覆盖 → 重启 ----------------
+    def do_update(self, _):
+        latest = self.state.get("update_latest")
+        if not latest:                       # 没检测到新版 → 退回打开发布页
+            self.open_releases()
+            return
+        if self.state.get("updating"):
+            return
+        installed = auto_update.app_bundle_root(sys.executable)
+        if not installed:                    # 源码/开发运行,无法自更新 → 打开下载页
+            rumps.alert(i18n.t("app_name"), i18n.t("upd_dev"))
+            self.open_releases()
+            return
+        if rumps.alert(i18n.t("upd_confirm_t", v=latest),
+                       i18n.t("upd_confirm_b", app=i18n.t("app_name"), v=latest),
+                       ok=i18n.t("upd_ok"), cancel=i18n.t("upd_cancel")) != 1:
+            return
+        self.state["updating"] = True
+        self.state["update_pct"] = 0
+        threading.Thread(target=self._run_update, args=(latest, installed), daemon=True).start()
+
+    def _run_update(self, latest, installed):
+        """后台线程：下载新 dmg → apply_macos(挂载+校验+派 helper)。只改 state,UI 交给 tick。"""
+        dmg = Path(tempfile.gettempdir()) / f"VoiceLog-{latest}.dmg"
+        ok = auto_update.download_file(
+            auto_update.asset_url(latest, "mac"), dmg,
+            lambda f: self.state.__setitem__("update_pct", round(f * 100)))
+        if not ok:
+            self.state["updating"] = False
+            self.state["update_result"] = i18n.t("upd_dl_fail")
+            return
+        applied, msg = auto_update.apply_macos(str(dmg), installed, os.getpid())
+        if applied:
+            self.state["update_apply"] = True   # tick 退出本进程 → helper 完成替换+重启
+        else:
+            self.state["updating"] = False
+            self.state["update_result"] = msg
 
     def open_note(self, _):
         note = VAULT / f"{now():%Y-%m-%d}.md"
