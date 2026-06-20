@@ -20,16 +20,20 @@
 - Python ≥ 3.10(安装脚本会用 uv 自动准备一个 hermetic 3.12)
 - 一支麦克风(原项目用 DJI Mic Mini,任何输入设备都行)
 
-## 📥 下载安装（推荐）
+## 📥 下载安装
 
-去 [**Releases**](https://github.com/zhaozimin/Recorder/releases) 下载最新 `VoiceLog-x.y.z.dmg`，双击打开，把 **VoiceLog** 拖进「应用程序」即可。
+去 [**Releases**](https://github.com/zhaozimin/Recorder/releases) 下载，每个平台都有「在线版」和「全离线版」：
 
-- **要求**：Apple Silicon Mac（M 系列）+ macOS 13 以上。
-- **首次启动**：会弹「VoiceLog 想访问麦克风」→ 点**允许**；之后它常驻菜单栏（无 Dock 图标）。
-- **首次转写**：会联网下载一次语音模型（约 1–2 GB，仅此一次），之后全离线。
-- 已 Apple 公证，双击直接开；若想开机自启，到「系统设置 → 通用 → 登录项」把 VoiceLog 加上。
+| 平台 | 版本 | 说明 |
+|---|---|---|
+| **macOS**（Apple Silicon, 13+） | `VoiceLog-x.y.z.dmg` | 在线版（~320M），首次点「下载语音模型」自动下（国内可达）。**已 Apple 公证** |
+| | `VoiceLog-x.y.z-offline.dmg` | 全离线版（~1.7G），模型内置，装完零联网即用 |
+| **Windows**（x64，⚠️ Beta） | `VoiceLog-x.y.z-Setup.exe` | 在线版（~182M）。未签名，SmartScreen 点「仍要运行」 |
+| | `VoiceLog-x.y.z-offline-Setup.exe` | 全离线版（~1.8G），模型内置 |
 
-> Windows 版正在移植中（核心引擎是 Apple 独占的，需换转写后端，见 `packaging/windows/PORT_PLAN.md`）。
+- **macOS**：双击 dmg → 拖进「应用程序」→ 启动后允许麦克风 → 常驻菜单栏（无 Dock）。开机自启到「系统设置 → 登录项」加。
+- **模型**：在线版首次需联网下一次（~1.5G，从本仓库 GitHub Release 下，**绕开 HuggingFace、国内可达**），之后全离线；也可在 [`models`](https://github.com/zhaozimin/Recorder/releases/tag/models) 手动下载放进应用 models 目录。
+- **Windows 是实验版**：开发者无 Windows 真机，仅 CI 构建、未经运行验证，详见对应 Release 的限制说明与 `packaging/windows/PORT_PLAN.md`。
 
 ## 🚀 从源码运行（开发者）
 
