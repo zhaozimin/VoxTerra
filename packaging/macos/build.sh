@@ -28,13 +28,19 @@ cd "$PROJ"
 [ -d "$APP" ] || { echo "!! 打包失败:未生成 $APP"; exit 1; }
 
 echo "==> [3/5] 由内向外深度签名(硬化运行时)"
-# 先签所有嵌套 mach-O(dylib/so),再签框架,最后签 .app 主体——顺序错了公证必挂。
-find "$APP/Contents" \( -name "*.dylib" -o -name "*.so" \) -type f -print0 \
-  | xargs -0 -I{} codesign --force --timestamp --options runtime -s "$DEV_ID" {} 2>/dev/null || true
-# 嵌套 .framework(若有)逐个签
+# 关键:不能只按 .dylib/.so 扩展名签——torch/bin 里有无扩展名的可执行(protoc/torch_shm_manager),
+# 漏签它们=公证 Invalid。故按「文件内容是否 Mach-O」逐个收集,确保零遗漏。
+echo "    扫描所有 Mach-O 二进制..."
+MACHO=()
+while IFS= read -r -d '' f; do
+  file -b "$f" 2>/dev/null | grep -q "Mach-O" && MACHO+=("$f")
+done < <(find "$APP/Contents" -type f -print0)
+echo "    共 ${#MACHO[@]} 个 Mach-O,带硬化运行时+时间戳签名"
+printf '%s\0' "${MACHO[@]}" | xargs -0 codesign --force --timestamp --options runtime -s "$DEV_ID"
+# 嵌套 .framework(若有)整体再签一遍
 find "$APP/Contents" -name "*.framework" -type d -print0 \
   | xargs -0 -I{} codesign --force --timestamp --options runtime -s "$DEV_ID" {} 2>/dev/null || true
-# 主可执行 + 整个 bundle(带 entitlements)
+# 主可执行 + 整个 bundle(带 entitlements),最后签
 codesign --force --timestamp --options runtime --entitlements "$ENT" \
          -s "$DEV_ID" "$APP/Contents/MacOS/VoiceLog"
 codesign --force --timestamp --options runtime --entitlements "$ENT" \
