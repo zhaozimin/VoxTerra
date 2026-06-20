@@ -48,7 +48,7 @@ import i18n
 # 故配置/日志/声纹必须落在用户可写区。两种形态：
 #   · 打包(.app)：资源在 bundle(_MEIPASS)，数据在 ~/Library/Application Support/VoiceLog
 #   · 源码(开发)：资源与数据都在代码旁——保持旧行为，现有 launchd 部署零改动
-VERSION = "0.9.2"
+VERSION = "0.9.3"
 
 FROZEN = getattr(sys, "frozen", False)
 RES = Path(getattr(sys, "_MEIPASS", "")) if FROZEN else Path(__file__).resolve().parent
@@ -634,7 +634,7 @@ class VoiceLogApp(rumps.App):
             self.count_item,
             self.toggle_item,
             None,  # 分隔线
-            *([self.model_item] if MANAGED_MODEL else []),  # 托管模式才显示「下载模型」
+            self.model_item,   # 模型状态常显：🟢已就绪 / ⬇下载 / ⏳下载中 / ⚠️未找到——任何模式都不黑盒
             self.enroll_item,
             self.spk_item,
             None,  # 分隔线
@@ -897,14 +897,14 @@ class VoiceLogApp(rumps.App):
         self.count_item.title = i18n.t("count", n=self.state["count"]) + drop + tag
         self.enroll_item.title = self._enroll_title()  # 注册状态/进度实时刷新
         self.spk_item.title = self._spk_title()        # 显示上句相似度，便于校准阈值
-        if MANAGED_MODEL:                              # 模型菜单标题 + 下载结果弹窗(主线程)
-            self.model_item.title = self._model_title()
+        self.model_item.title = self._model_title()   # 常显:任何模式都刷新模型状态(主线程)
+        if MANAGED_MODEL:                              # 下载结果弹窗只在托管模式有意义
             r = self.state.pop("model_result", None)
             if r == "ok":
                 rumps.notification(i18n.t("app_name"), "", i18n.t("model_done"))
             elif r == "fail":
                 rumps.alert(i18n.t("model_fail_t"), model_hint(MAC_MODEL_URL, str(MODEL)))
-        model_missing = MANAGED_MODEL and not model_ready(MODEL)
+        model_missing = not model_ready(MODEL)         # 任何模式缺模型都亮 ⚠️
         if self.state.get("model_dl"):
             st = "⬇"            # 正在下载模型
         elif model_missing:
@@ -928,15 +928,21 @@ class VoiceLogApp(rumps.App):
 
     # ---------------- 语音模型：检查 / 从 GitHub 下载（国内可达，绕开 HF） ----------------
     def _model_title(self) -> str:
-        if not MANAGED_MODEL or model_ready(MODEL):
-            return i18n.t("model_check")
+        # 四态常显，让用户一眼确知本地模型状态，绝不黑盒：
         if self.state.get("model_dl"):
-            return i18n.t("model_dling", p=self.state.get("model_pct", 0))
-        return i18n.t("model_get")
+            return i18n.t("model_dling", p=self.state.get("model_pct", 0))  # ⏳ 下载中 X%
+        if model_ready(MODEL):
+            return i18n.t("model_check")     # 🟢 已就绪(本地路径/内置/已下载，任何来源)
+        if MANAGED_MODEL:
+            return i18n.t("model_get")       # ⬇ 缺失·托管模式·点此自动下载
+        return i18n.t("model_missing")       # ⚠️ 缺失·直连模式·路径配错了
 
     def do_model(self, _):
         if model_ready(MODEL):
-            rumps.alert(i18n.t("app_name"), i18n.t("model_check"))
+            rumps.alert(i18n.t("app_name"), i18n.t("model_check"))           # 已就绪：确认状态
+            return
+        if not MANAGED_MODEL:
+            rumps.alert(i18n.t("model_missing_t"), i18n.t("model_missing_b"))  # 直连但路径无模型
             return
         if self.state.get("model_dl"):
             return

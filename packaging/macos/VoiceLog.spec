@@ -74,13 +74,13 @@ app = BUNDLE(
     name="VoiceLog.app",
     icon=os.path.join(SPEC_DIR, "VoiceLog.icns"),
     bundle_identifier="com.zhaozimin.voicelog",   # ID/磁盘名/数据目录保持 ASCII 稳定,绝不改
-    version="0.9.2",
+    version="0.9.3",
     info_plist={
         # 显示名用中文品牌「言壤」(访达/麦克风权限列表所见);磁盘 .app 名与 bundle id 仍 ASCII。
         "CFBundleName": "言壤",
         "CFBundleDisplayName": "言壤",
-        "CFBundleShortVersionString": "0.9.2",
-        "CFBundleVersion": "0.9.2",
+        "CFBundleShortVersionString": "0.9.3",
+        "CFBundleVersion": "0.9.3",
         "LSUIElement": True,                 # 菜单栏常驻,无 Dock 图标
         "LSMinimumSystemVersion": "13.0",
         "NSMicrophoneUsageDescription":

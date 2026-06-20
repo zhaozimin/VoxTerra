@@ -43,7 +43,7 @@ import i18n
 
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")  # 关掉会卡死的 hf_xet(ECAPA 若走 HF)
 
-VERSION = "0.9.2"
+VERSION = "0.9.3"
 
 # ---------------- 路径：只读资源(RES) 与 可写用户数据(DATA) 解耦 ----------------
 # Windows: 数据落 %APPDATA%\VoiceLog;其他平台(便于在 Mac 上验证)落 ~/.voicelog-win。
@@ -442,15 +442,21 @@ class TrayApp:
 
     # ---------------- 语音模型：检查 / 从 GitHub 下载（国内可达，绕开 HF） ----------------
     def _model_title(self):
-        if not MANAGED_WIN or model_ready(MODEL_WIN):
-            return i18n.t("model_check")
+        # 四态常显，让用户一眼确知本地模型状态，绝不黑盒：
         if self.state.get("model_dl"):
-            return i18n.t("model_dling", p=self.state.get("model_pct", 0))
-        return i18n.t("model_get")
+            return i18n.t("model_dling", p=self.state.get("model_pct", 0))  # ⏳ 下载中 X%
+        if model_ready(MODEL_WIN):
+            return i18n.t("model_check")     # 🟢 已就绪(本地路径/内置/已下载)
+        if MANAGED_WIN:
+            return i18n.t("model_get")       # ⬇ 缺失·托管模式·点此自动下载
+        return i18n.t("model_missing")       # ⚠️ 缺失·直连模式·路径配错了
 
     def _download_model_click(self, icon, item):
         if model_ready(MODEL_WIN):
-            icon.notify(i18n.t("model_check"), i18n.t("app_name"))
+            icon.notify(i18n.t("model_check"), i18n.t("app_name"))            # 已就绪：确认状态
+            return
+        if not MANAGED_WIN:
+            icon.notify(i18n.t("model_missing_b"), i18n.t("model_missing_t"))  # 直连但路径无模型
             return
         if self.state.get("model_dl"):
             return
