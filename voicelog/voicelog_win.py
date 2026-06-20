@@ -559,4 +559,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()   # 冻结后必须:防多进程子进程把整个 App 重跑(分叉炸弹)
     main()

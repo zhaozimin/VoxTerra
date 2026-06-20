@@ -978,4 +978,7 @@ class VoiceLogApp(rumps.App):
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()   # 冻结(PyInstaller)后必须:否则 torch/speechbrain 等用多进程时,
+                                       # 子进程(macOS 默认 spawn)会把整个 App 再跑一遍 → 不停弹新 VoiceLog(分叉炸弹)
     VoiceLogApp().run()
