@@ -643,7 +643,6 @@ class VoiceLogApp(rumps.App):
         self.spk_item = rumps.MenuItem(self._spk_title(), callback=self.toggle_speaker)
         self.kw_item = rumps.MenuItem(i18n.t("keywords"), callback=self.do_replace)
         self.note_item = rumps.MenuItem(i18n.t("open_note"), callback=self.open_note)
-        self.logs_item = rumps.MenuItem(i18n.t("open_logs"), callback=self.open_logs)  # 日志入口(出问题可发我)
         self.model_item = rumps.MenuItem(self._model_title(), callback=self.do_model)
         self.quit_item = rumps.MenuItem(i18n.t("quit"), callback=self.quit_app)
         self.version_item = rumps.MenuItem(i18n.t("cur_version", app=i18n.t("app_name"), v=VERSION))  # 无回调=不可点
@@ -670,7 +669,6 @@ class VoiceLogApp(rumps.App):
             self.vault_item,
             self.kw_item,
             self.note_item,
-            self.logs_item,
             None,  # 分隔线
             self.version_item,                       # 版本
             self.update_item,                        # 更新提示（检查中/已最新/有新版）
@@ -733,7 +731,9 @@ class VoiceLogApp(rumps.App):
         except Exception:
             append_err("EnrollWindow: " + traceback.format_exc())
             self._enroll_win = None
-            rumps.alert(i18n.t("enroll_fail_t"), i18n.t("enroll_fail_b"))
+            if rumps.alert(i18n.t("enroll_fail_t"), i18n.t("enroll_fail_b"),
+                           ok=i18n.t("open_logs"), cancel=i18n.t("close")) == 1:
+                self.open_logs()
 
     def _enroll_start(self):
         """用户点「开始」后才真正录音 + 启动进度刷新定时器。"""
@@ -816,7 +816,9 @@ class VoiceLogApp(rumps.App):
             result, text = win.run_modal()
         except Exception:
             append_err("ReplaceWindow: " + traceback.format_exc())
-            rumps.alert(i18n.t("kw_fail_t"), i18n.t("kw_fail_b"))
+            if rumps.alert(i18n.t("kw_fail_t"), i18n.t("kw_fail_b"),
+                           ok=i18n.t("open_logs"), cancel=i18n.t("close")) == 1:
+                self.open_logs()
             return
         if result != "save":
             return
@@ -908,7 +910,6 @@ class VoiceLogApp(rumps.App):
         self.vault_item.title = self._vault_title()
         self.kw_item.title = i18n.t("keywords")
         self.note_item.title = i18n.t("open_note")
-        self.logs_item.title = i18n.t("open_logs")
         self.quit_item.title = i18n.t("quit")
         self.tz_menu.title = self._tz_title(self._cur_tz)
         if getattr(self, "_tz_follow", None):
@@ -1115,8 +1116,8 @@ class VoiceLogApp(rumps.App):
         except Exception:
             pass
 
-    def open_logs(self, _):
-        subprocess.run(["open", str(log_dir())])   # 让用户够得着日志(出问题时可发我)
+    def open_logs(self, _=None):
+        subprocess.run(["open", str(log_dir())])   # 出错弹窗里的「打开日志」按钮调用,让用户够得着 err.log
 
     def open_mic_settings(self):
         subprocess.run(["open",
