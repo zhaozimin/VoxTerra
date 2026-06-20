@@ -38,7 +38,8 @@ from silero_vad import load_silero_vad, VADIterator
 
 from speaker import SpeakerGate
 from transcribe_fw import FasterWhisper, DEFAULT_MODEL
-from model_fetch import model_ready, download_model, WIN_MODEL_URL
+from model_fetch import model_ready, model_status_key, download_model, WIN_MODEL_URL
+import update_check
 import i18n
 
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")  # 关掉会卡死的 hf_xet(ECAPA 若走 HF)
@@ -405,6 +406,7 @@ class TrayApp:
         self.tx = FasterWhisper(MODEL_WIN, download_root=MODEL_DIR)
         self.rec = Recorder(self.state, self.tx)
         self.state["enrolled"] = self.rec.speaker.enrolled
+        threading.Thread(target=self._check_update, daemon=True).start()   # 启动即后台查新版
         self.icon = pystray.Icon("VoiceLog", _tray_image(), i18n.t("app_name"), menu=self._menu())
 
     # ---------------- 菜单(标题/勾选用 callable,update_menu 时重算) ----------------
@@ -429,6 +431,7 @@ class TrayApp:
             I("打开配置文件 / Open config", self._open_config),
             pystray.Menu.SEPARATOR,
             I(f"{i18n.t('app_name')} v{VERSION} (Windows Beta)", None, enabled=False),
+            I(lambda _: self._update_title(), self._open_releases),  # 更新提示
             I("📣 作者主页：zhaozimin.cn", self._open_homepage),
             I("🪨 Obsidian 资料库：guangtou.me", self._open_vault_site),
             I("🐱 GitHub：github.com/zhaozimin", self._open_github),
@@ -442,14 +445,26 @@ class TrayApp:
 
     # ---------------- 语音模型：检查 / 从 GitHub 下载（国内可达，绕开 HF） ----------------
     def _model_title(self):
-        # 四态常显，让用户一眼确知本地模型状态，绝不黑盒：
-        if self.state.get("model_dl"):
-            return i18n.t("model_dling", p=self.state.get("model_pct", 0))  # ⏳ 下载中 X%
-        if model_ready(MODEL_WIN):
-            return i18n.t("model_check")     # 🟢 已就绪(本地路径/内置/已下载)
-        if MANAGED_WIN:
-            return i18n.t("model_get")       # ⬇ 缺失·托管模式·点此自动下载
-        return i18n.t("model_missing")       # ⚠️ 缺失·直连模式·路径配错了
+        # 四态常显，绝不黑盒。判定逻辑收敛在 model_status_key(与 mac 共用,可单测)。
+        key = model_status_key(bool(self.state.get("model_dl")), model_ready(MODEL_WIN), MANAGED_WIN)
+        return i18n.t(key, p=self.state.get("model_pct", 0)) if key == "model_dling" else i18n.t(key)
+
+    # ---------------- 更新提示：只查不装，给提示 + 跳下载页 ----------------
+    def _check_update(self):
+        latest = update_check.latest_version()
+        self.state["update_checked"] = True
+        if latest and update_check.is_newer(latest, VERSION):
+            self.state["update_latest"] = latest
+
+    def _update_title(self):
+        latest = self.state.get("update_latest")
+        if latest:
+            return i18n.t("upd_avail", v=latest)
+        return i18n.t("upd_latest") if self.state.get("update_checked") else i18n.t("upd_checking")
+
+    def _open_releases(self, icon=None, item=None):
+        import webbrowser
+        webbrowser.open(update_check.RELEASES_PAGE)
 
     def _download_model_click(self, icon, item):
         if model_ready(MODEL_WIN):

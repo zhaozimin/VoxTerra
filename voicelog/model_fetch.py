@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 [INPUT]: 依赖标准库 urllib/zipfile/shutil/tempfile;模型 zip 托管在本项目 GitHub Release
-[OUTPUT]: 对外提供 model_ready / download_model / MAC_MODEL_URL / WIN_MODEL_URL / model_hint
+[OUTPUT]: 对外提供 model_ready / model_status_key / download_model / MAC_MODEL_URL / WIN_MODEL_URL / model_hint
 [POS]: 跨平台「模型获取」中枢,被 voicelog_menubar.py(mac) 与 voicelog_win.py(win) 共用。
        不走 HuggingFace/镜像(国内不稳)——直接从我们自己的 GitHub Release 拉 zip,我可控、国内可达、可手动下。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -37,6 +37,18 @@ def model_ready(model_dir) -> bool:
         return True
     mb = d / "model.bin"
     return mb.exists() and mb.stat().st_size >= _MIN_WEIGHT
+
+
+def model_status_key(downloading: bool, ready: bool, managed: bool) -> str:
+    """模型四态 → i18n 键。单一真相源,mac/win 的 _model_title 共用,可穷举单测。
+    下载中 > 已就绪 > 托管缺失(可下载) > 直连缺失(配置错)。"""
+    if downloading:
+        return "model_dling"     # ⏳ 正在下载 X%
+    if ready:
+        return "model_check"     # 🟢 已就绪
+    if managed:
+        return "model_get"       # ⬇ 缺失·托管·点此下载
+    return "model_missing"       # ⚠️ 缺失·直连·路径配错
 
 
 def _find_model_root(d: Path) -> Path:

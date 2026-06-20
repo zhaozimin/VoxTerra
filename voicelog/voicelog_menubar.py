@@ -40,7 +40,8 @@ import mlx_whisper
 from silero_vad import load_silero_vad, VADIterator
 
 from speaker import SpeakerGate
-from model_fetch import model_ready, download_model, MAC_MODEL_URL, model_hint
+from model_fetch import model_ready, model_status_key, download_model, MAC_MODEL_URL, model_hint
+import update_check
 import i18n
 
 # ---------------- 路径：只读资源(RES) 与 可写用户数据(DATA) 解耦 ----------------
@@ -624,6 +625,8 @@ class VoiceLogApp(rumps.App):
         self.model_item = rumps.MenuItem(self._model_title(), callback=self.do_model)
         self.quit_item = rumps.MenuItem(i18n.t("quit"), callback=self.quit_app)
         self.version_item = rumps.MenuItem(f"{i18n.t('app_name')} v{VERSION}")  # 无回调=不可点
+        self.update_item = rumps.MenuItem(i18n.t("upd_checking"), callback=self.open_releases)  # 更新提示
+        threading.Thread(target=self._check_update, daemon=True).start()        # 启动即后台查新版
         self.ad_item = rumps.MenuItem("作者主页：zhaozimin.cn", callback=self.open_homepage)
         self._style_ad(self.ad_item, "📣 作者主页：zhaozimin.cn", (0.39, 0.58, 0.86))      # 柔和蓝
         self.ad2_item = rumps.MenuItem("Obsidian 资料库：guangtou.me", callback=self.open_vault_site)
@@ -647,6 +650,7 @@ class VoiceLogApp(rumps.App):
             self.note_item,
             None,  # 分隔线
             self.version_item,                       # 版本
+            self.update_item,                        # 更新提示（检查中/已最新/有新版）
             self.ad_item,                            # 作者主页（柔和蓝）
             self.ad2_item,                           # Obsidian 资料库（柔和绿）
             self.ad3_item,                           # GitHub（柔和黄）
@@ -898,6 +902,7 @@ class VoiceLogApp(rumps.App):
         self.enroll_item.title = self._enroll_title()  # 注册状态/进度实时刷新
         self.spk_item.title = self._spk_title()        # 显示上句相似度，便于校准阈值
         self.model_item.title = self._model_title()   # 常显:任何模式都刷新模型状态(主线程)
+        self.update_item.title = self._update_title()  # 更新提示:检查中→已最新/有新版(主线程)
         if MANAGED_MODEL:                              # 下载结果弹窗只在托管模式有意义
             r = self.state.pop("model_result", None)
             if r == "ok":
@@ -928,14 +933,9 @@ class VoiceLogApp(rumps.App):
 
     # ---------------- 语音模型：检查 / 从 GitHub 下载（国内可达，绕开 HF） ----------------
     def _model_title(self) -> str:
-        # 四态常显，让用户一眼确知本地模型状态，绝不黑盒：
-        if self.state.get("model_dl"):
-            return i18n.t("model_dling", p=self.state.get("model_pct", 0))  # ⏳ 下载中 X%
-        if model_ready(MODEL):
-            return i18n.t("model_check")     # 🟢 已就绪(本地路径/内置/已下载，任何来源)
-        if MANAGED_MODEL:
-            return i18n.t("model_get")       # ⬇ 缺失·托管模式·点此自动下载
-        return i18n.t("model_missing")       # ⚠️ 缺失·直连模式·路径配错了
+        # 四态常显，让用户一眼确知本地模型状态，绝不黑盒。判定逻辑收敛在 model_status_key(可单测)。
+        key = model_status_key(bool(self.state.get("model_dl")), model_ready(MODEL), MANAGED_MODEL)
+        return i18n.t(key, p=self.state.get("model_pct", 0)) if key == "model_dling" else i18n.t(key)
 
     def do_model(self, _):
         if model_ready(MODEL):
@@ -956,6 +956,25 @@ class VoiceLogApp(rumps.App):
                             lambda f: self.state.__setitem__("model_pct", round(f * 100)))
         self.state["model_dl"] = False
         self.state["model_result"] = "ok" if ok else "fail"
+
+    # ---------------- 更新提示：只查不装，给提示 + 跳下载页 ----------------
+    def _check_update(self):
+        """后台线程查最新版,只写 state;由主线程 tick 反映到菜单(不跨线程碰 UI)。失败静默。"""
+        latest = update_check.latest_version()
+        self.state["update_checked"] = True
+        if latest and update_check.is_newer(latest, VERSION):
+            self.state["update_latest"] = latest
+
+    def _update_title(self) -> str:
+        latest = self.state.get("update_latest")
+        if latest:
+            return i18n.t("upd_avail", v=latest)        # 🆕 有新版本 vX — 点此更新
+        if self.state.get("update_checked"):
+            return i18n.t("upd_latest")                 # ✓ 已是最新版
+        return i18n.t("upd_checking")                   # 检查更新中…
+
+    def open_releases(self, _):
+        webbrowser.open(update_check.RELEASES_PAGE)
 
     def open_note(self, _):
         note = VAULT / f"{now():%Y-%m-%d}.md"
