@@ -1,8 +1,14 @@
 import SwiftUI
 import AppKit
 
-/// 菜单栏托盘弹窗(MenuBarExtra .window)。共享同一 engine → 暂停与主窗口实时同步。
-/// 原生可上色：🌐 主页(柔和红) / 🪨 资料库(柔和紫) / 🐱 GitHub(柔和蓝)。
+/*
+ * [INPUT]: 依赖 Engine(@EnvironmentObject)、Environment(openWindow)、NSWorkspace、Color 令牌
+ * [OUTPUT]: 对外提供 TrayView(菜单栏弹窗:本地模型/声纹状态行 + 暂停 + 打开主窗口 + 作者三链接 + 退出)
+ * [POS]: App.swift 的 MenuBarExtra(.window) 内容视图;与主窗口共享 engine,状态实时同步
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ *
+ * 菜单栏托盘弹窗(MenuBarExtra .window)。原生可上色:🌐 主页(柔和红)/🪨 资料库(柔和紫)/🐱 GitHub(柔和蓝)。
+ */
 struct TrayView: View {
     @EnvironmentObject var engine: Engine
     @Environment(\.openWindow) private var openWindow

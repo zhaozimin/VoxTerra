@@ -1,7 +1,7 @@
 # packaging/
 > L2 | 父级: ../CLAUDE.md
 
-分发打包：把源码形态的 VoiceLog 变成粉丝可下载安装的成品。macOS 已交付；Windows 是脚手架(待移植)。
+分发打包：把源码形态的 VoiceLog 变成粉丝可下载安装的成品。macOS 已正式交付(签名+公证,Latest)；Windows 经 GitHub Actions CI 真实构建并发布(测试版,未签名)。
 
 ## 成员清单
 - `macos/`: macOS 打包子模块(已可用)。PyInstaller → 签名 → 公证 → `.dmg`。
@@ -14,7 +14,7 @@
   - `notarize.sh`: notarytool 提交公证(App+DMG)→stapler 装订(离线可验)。需 Apple ID 专用密码。
   - `make_icon.py`: 把品牌白 logo 合成深色 squircle → master PNG;配 sips/iconutil 产 `VoiceLog.icns`。
   - `VoiceLog.icns`: App/Dock/Finder/DMG 图标(make_icon.py 产物,提交入库供构建直接用)。
-- `windows/`: Windows 实验版(**Beta 已实现**,未签名/未真机验证,CI 构建)。入口 `voicelog/voicelog_win.py`。
+- `windows/`: Windows 实验版(**Beta 已发布**,经 CI 构建发 Release;未签名,首启 SmartScreen 需放行)。入口 `voicelog/voicelog_win.py`。
   - `PORT_PLAN.md`: 移植方案 + 实现现状 + 已知债(大脑暂复制未共享)。
   - `requirements-windows.txt`: Windows 依赖(faster-whisper/pystray,去掉 mlx/rumps/pyobjc)。
   - `VoiceLog-win.spec`: PyInstaller(收集 faster_whisper/ctranslate2/silero/sounddevice/speechbrain/pystray,

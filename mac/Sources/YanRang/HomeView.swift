@@ -1,5 +1,12 @@
 import SwiftUI
 
+/*
+ * [INPUT]: 依赖 Engine(@EnvironmentObject)、BreathingDot/StatTile/ConfigRow、card() 修饰器、Color 令牌
+ * [OUTPUT]: 对外提供 HomeView(首页:状态英雄区 + 暂停按钮 + 统计/配置 + 今日实时流(倒序))
+ * [POS]: 四标签页之首,1:1 复刻 desktop/src/pages/Home;经 engine 读今日笔记/状态
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 struct HomeView: View {
     @EnvironmentObject var engine: Engine
 

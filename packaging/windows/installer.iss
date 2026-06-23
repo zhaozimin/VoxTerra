@@ -1,7 +1,7 @@
 ; ============================================================================
-;  VoiceLog · Windows 安装包脚本 (Inno Setup) —— 骨架,待移植落地后启用
-;  把 PyInstaller 产出的 dist\VoiceLog\ 打成单文件安装程序。
-;  TODO(移植时): 确认 dist 路径;补 .ico;可选「开机自启」复选框写注册表 Run 键。
+;  VoiceLog · Windows 安装包脚本 (Inno Setup) —— 已实装,经 GitHub Actions CI 构建发布(测试版)
+;  把 PyInstaller 产出的 dist\VoiceLog\ 打成单文件安装程序 VoiceLog-x.y.z-Setup.exe(含开机自启选项)。
+;  由 .github/workflows/build-windows.yml(标准)/build-windows-offline.yml(含模型离线版)调用。
 ; ============================================================================
 ; 显示名「言壤」(开始菜单/控制面板/向导可见);安装目录/输出文件名/exe 名保持 ASCII(VoiceLog)。
 #define MyAppName "言壤"

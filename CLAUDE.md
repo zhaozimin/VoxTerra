@@ -1,5 +1,5 @@
-# 言壤（VoiceLog）— 本地实时语音日志（macOS 菜单栏常驻）
-Python 3.12(uv) + mlx-whisper(large-v3) + silero-vad + speechbrain(ECAPA) + sounddevice + rumps + launchd
+# 言壤（VoiceLog）— 本地实时语音日志（macOS 菜单栏 lite + SwiftUI 完整版 / Windows 测试版）
+引擎 Python 3.12(uv) + mlx-whisper + silero-vad + speechbrain(ECAPA) + sounddevice + rumps；**前端 Swift/SwiftUI（macOS V1 旗舰，mac/）**；Windows 用 faster-whisper(CT2) + pystray
 
 把贴身 DJI Mic Mini 的语音实时转成当天 Markdown 日志。**音频绝不写盘，文字不上传**，全本地。
 
@@ -12,11 +12,13 @@ Python 3.12(uv) + mlx-whisper(large-v3) + silero-vad + speechbrain(ECAPA) + soun
 </branding>
 
 <directory>
-voicelog/  - 应用本体 (一套引擎两层外壳：菜单栏 lite / Dock 全窗口 full main_window.py + 声纹 speaker.py + 模型获取/更新检查 + i18n + 原生窗口)
-tests/     - 行为锚点 (标准库 unittest，钉死纯逻辑：版本比较/模型四态/下载完整性/i18n/粘贴)
+voicelog/  - 引擎+菜单栏外壳 (一套引擎两层外壳：菜单栏 lite / Dock 全窗口 full main_window.py + 声纹 speaker.py + 模型获取/续传 + 更新检查 + i18n + 原生窗口)
+mac/       - **原生 SwiftUI 完整版（V1 旗舰）** (Sources/YanRang/*.swift：统一工具栏窗口+四页+菜单栏托盘+注册浮层；用 Process 拉起 voicelog headless 引擎作 sidecar；SPM 构建)
+desktop/   - 已废弃 Tauri 版 (Rust/JS，历史存档，被 mac/ SwiftUI 取代，不再维护)
+tests/     - 行为锚点 (标准库 unittest，钉死纯逻辑：版本比较/模型四态/下载续传锚点/自动更新/i18n/粘贴)
 launchd/   - 开机自启：plist 与装载脚本 (登录即常驻，开发机自用)
-packaging/ - 分发打包 (macos: PyInstaller+签名+公证→.dmg；windows: 移植脚手架+CI)
-.github/   - GitHub Actions (build-windows.yml：windows-latest 出 .exe，待移植落地)
+packaging/ - 分发打包 (macos: PyInstaller+签名+公证→.dmg(build-app.sh 嫁接 SwiftUI)；windows: Inno Setup CI 构建→.exe 测试版)
+.github/   - GitHub Actions (build-windows.yml：标准构建发 Release；build-windows-offline.yml：含模型离线版)
 </directory>
 
 <config>
