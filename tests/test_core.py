@@ -103,6 +103,42 @@ def _zip_with_model() -> bytes:
     return buf.getvalue()
 
 
+class _RangeResp:
+    """支持 Range/Content-Range/status/中途断流 的伪响应,喂给 download_model 的重试续传循环。"""
+    def __init__(self, body, headers, status, drop_after=None):
+        self._b = io.BytesIO(body); self.headers = headers; self.status = status
+        self._drop = drop_after; self._n = 0
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def read(self, n=-1):
+        if self._drop is not None and self._n >= self._drop:
+            raise ConnectionResetError("injected drop")
+        b = self._b.read(n); self._n += len(b); return b
+    def close(self): pass
+
+
+def _range_server(data: bytes, mode: str, cap=None):
+    """构造一个按 mode 行事的 urlopen 替身。mode: honest(完整) / capped(每次 cap 字节合法分片) / drop(连上即断)。"""
+    total = len(data)
+
+    def urlopen(req, timeout=None):
+        rng = req.headers.get("Range")
+        start = int(rng.split("=")[1].rstrip("-")) if rng else 0
+        if mode == "honest":
+            body = data[start:]; h = {"Content-Length": str(len(body))}
+            if rng:
+                h["Content-Range"] = f"bytes {start}-{total-1}/{total}"; return _RangeResp(body, h, 206)
+            return _RangeResp(body, h, 200)
+        if mode == "capped":
+            end = min(start + cap, total); body = data[start:end]
+            h = {"Content-Length": str(len(body)), "Content-Range": f"bytes {start}-{end-1}/{total}"}
+            return _RangeResp(body, h, 206)
+        if mode == "drop":
+            return _RangeResp(b"", {"Content-Length": str(total)}, 200, drop_after=0)
+        raise AssertionError(mode)
+    return urlopen
+
+
 class TestDownloadModel(unittest.TestCase):
     def test_truncated_returns_false(self):
         # Content-Length 说 100，实际只给 50 → 字节对不上 → False(不拿截断 zip 解压)
@@ -123,6 +159,49 @@ class TestDownloadModel(unittest.TestCase):
         with mock.patch("urllib.request.urlopen", return_value=_FakeResp(data, None)):
             dest = Path(tempfile.mkdtemp()) / "whisper-mlx-turbo"
             self.assertTrue(model_fetch.download_model("http://x/z.zip", dest))
+
+    # ---- 断点续传重构(自带重试 + 取消 + 分片 + 有界失败)的行为锚点 ----
+    def test_status_reports_ok(self):
+        # status dict 回填 'ok'(下载器自身判定,非事后读旗标)
+        data = _zip_with_model()
+        with mock.patch("urllib.request.urlopen", _range_server(data, "honest")):
+            dest = Path(tempfile.mkdtemp()) / "whisper-mlx-turbo"; status = {}
+            self.assertTrue(model_fetch.download_model("http://x/z.zip", dest, status=status))
+            self.assertEqual(status.get("state"), "ok")
+
+    def test_cancel_keeps_part_and_reports_cancelled(self):
+        # 下到一半喊停 → 返回 False、status='cancelled'、.part 保留供续传(不算失败)
+        data = _zip_with_model()
+        flag = {"f": False}
+        cb = lambda frac: flag.__setitem__("f", frac > 0.4)
+        part = None
+        with mock.patch("urllib.request.urlopen", _range_server(data, "honest")):
+            dest = Path(tempfile.mkdtemp()) / "whisper-mlx-turbo"
+            part = dest.parent / (dest.name + ".part.zip")
+            ok = model_fetch.download_model("http://x/z.zip", dest, cb,
+                                            should_cancel=lambda: flag["f"], status=(s := {}))
+        self.assertFalse(ok)
+        self.assertEqual(s.get("state"), "cancelled")
+        self.assertFalse(model_fetch.model_ready(dest))
+        self.assertTrue(part.exists())                       # 进度保留,下次可续
+
+    def test_capped_proxy_slices_reassemble(self):
+        # 代理每次只回 1/3 的合法分片(206+Content-Range)→ 跨段重组成功(不被误判截断)
+        data = _zip_with_model()
+        with mock.patch("urllib.request.urlopen", _range_server(data, "capped", cap=len(data) // 3)):
+            dest = Path(tempfile.mkdtemp()) / "whisper-mlx-turbo"
+            self.assertTrue(model_fetch.download_model("http://x/z.zip", dest, status=(s := {})))
+            self.assertEqual(s.get("state"), "ok")
+            self.assertTrue(model_fetch.model_ready(dest))
+
+    def test_zero_progress_is_bounded(self):
+        # 连上即断、零进展 → 不挂死,恰在 _MAX_STALLS 次后失败(_nap 打桩去 sleep)
+        data = _zip_with_model()
+        with mock.patch.object(model_fetch, "_nap", lambda secs, sc: bool(sc and sc())):
+            with mock.patch("urllib.request.urlopen", _range_server(data, "drop")):
+                dest = Path(tempfile.mkdtemp()) / "whisper-mlx-turbo"
+                self.assertFalse(model_fetch.download_model("http://x/z.zip", dest, status=(s := {})))
+                self.assertEqual(s.get("state"), "fail")
 
 
 # ============================================================================
@@ -174,8 +253,10 @@ class TestI18nParity(unittest.TestCase):
                   "upd_checking", "upd_latest", "upd_avail", "upd_downloading",
                   "upd_confirm_t", "upd_confirm_b", "upd_ok", "upd_cancel",
                   "upd_dl_fail", "upd_fail_t", "upd_dev",
-                  "open_logs", "welcome_t", "welcome_b", "mic_denied_t",
-                  "mic_denied_b", "mic_open_settings", "write_lost_b", "fell_back_b"):
+                  "open_logs", "open_config", "welcome_t", "welcome_b", "mic_denied_t",
+                  "mic_denied_b", "mic_open_settings", "write_lost_b", "fell_back_b",
+                  "settings_menu", "settings_title", "settings_sub", "settings_reset",
+                  "settings_saved_t", "settings_saved_b"):
             self.assertIn(k, i18n.STRINGS["zh"])
 
     def test_format_placeholders(self):
@@ -190,6 +271,23 @@ class TestI18nParity(unittest.TestCase):
 # ============================================================================
 #  关键词窗口 Cmd+V 粘贴(macOS + pyobjc 才跑,否则跳过)
 # ============================================================================
+@unittest.skipUnless(sys.platform == "darwin", "settings_ui 经 ui_common 依赖 AppKit")
+class TestSettingsQuantize(unittest.TestCase):
+    def test_quantize_clamp_and_step(self):
+        try:
+            import settings_ui as su
+        except Exception as e:
+            self.skipTest(f"pyobjc 不可用: {e}")
+        spk = next(p for p in su.PARAMS if p[0] == "speaker_threshold")   # 0.10–0.80 step0.01
+        self.assertEqual(su._quantize(spk, 0.353), 0.35)
+        self.assertEqual(su._quantize(spk, 5.0), 0.80)       # 上夹紧
+        self.assertEqual(su._quantize(spk, -1.0), 0.10)      # 下夹紧
+        ms = next(p for p in su.PARAMS if p[0] == "min_speech_ms")        # int 100–1000 step50
+        self.assertEqual(su._quantize(ms, 317), 300)
+        self.assertIsInstance(su._quantize(ms, 317), int)
+        self.assertEqual(set(su.DEFAULTS), {p[0] for p in su.PARAMS})
+
+
 @unittest.skipUnless(sys.platform == "darwin", "AppKit 仅 macOS")
 class TestPasteKeyWindow(unittest.TestCase):
     def test_cmd_v_pastes(self):

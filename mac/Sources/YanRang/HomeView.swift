@@ -24,6 +24,7 @@ struct HomeView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(engine.muted ? Color.brand : Color.sunken)
                 .foregroundStyle(engine.muted ? .white : Color.appFg)
+                .clickable()
             }
             .padding(18)
             .card()
@@ -68,7 +69,8 @@ struct HomeView: View {
                             .frame(maxWidth: .infinity).padding(.vertical, 48)
                     } else {
                         LazyVStack(spacing: 0) {
-                            ForEach(engine.today) { line in
+                            // 倒序显示：最新说的排最顶(仅展示层翻转；Markdown 仍按时间正序 append)
+                            ForEach(Array(engine.today.reversed())) { line in
                                 HStack(alignment: .top, spacing: 12) {
                                     Text(line.time)
                                         .font(.system(size: 13, design: .monospaced))

@@ -55,7 +55,7 @@ struct HistoryView: View {
                     Button { date = Date() } label: {
                         Text("今天").frame(maxWidth: .infinity)
                     }
-                    .controlSize(.large)
+                    .controlSize(.large).clickable()
                 }
                 .fixedSize(horizontal: true, vertical: false)
 

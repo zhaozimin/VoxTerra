@@ -10,6 +10,7 @@
   - `entitlements.plist`: 硬化运行时豁免(allow-jit / allow-unsigned-executable-memory /
     disable-library-validation / audio-input)——公证强制开硬化运行时,而 Python/torch/mlx 需这些豁免才不崩。
   - `build.sh`: 一键 构建→由内向外深签(先 dylib/so 再 .app)→校验→打 DMG。需 Developer ID 证书在钥匙串。
+  - `build-app.sh`: **完整 App 统一构建(V1)**。以 PyInstaller 的 VoiceLog.app(引擎+运行时)为底座,嫁接 `../../mac` 的 SwiftUI 可执行 YanRang+dylib+资源,主入口改 YanRang(它拉起同包内引擎 Contents/MacOS/VoiceLog, headless),去 LSUIElement→由内向外深签→DMG「言壤-<ver>.dmg」。前置:先跑 build.sh 的 PyInstaller 步骤生成 dist/VoiceLog.app。
   - `notarize.sh`: notarytool 提交公证(App+DMG)→stapler 装订(离线可验)。需 Apple ID 专用密码。
   - `make_icon.py`: 把品牌白 logo 合成深色 squircle → master PNG;配 sips/iconutil 产 `VoiceLog.icns`。
   - `VoiceLog.icns`: App/Dock/Finder/DMG 图标(make_icon.py 产物,提交入库供构建直接用)。

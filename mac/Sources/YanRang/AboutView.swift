@@ -42,6 +42,7 @@ private struct LinkRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
+        .clickable()
     }
 }
 
@@ -72,7 +73,7 @@ struct AboutView: View {
                             Button { openURL("https://github.com/zhaozimin/Recorder/releases/latest") } label: {
                                 Label("更新到 v\(v)", systemImage: "arrow.triangle.2.circlepath")
                             }
-                            .buttonStyle(.borderedProminent).tint(Color.brand).controlSize(.small)
+                            .buttonStyle(.borderedProminent).tint(Color.brand).controlSize(.small).clickable()
                         } else {
                             Text("已是最新版本").font(.caption).foregroundStyle(Color.textTertiary)
                         }

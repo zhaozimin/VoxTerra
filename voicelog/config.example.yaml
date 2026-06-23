@@ -1,6 +1,12 @@
 # ===================== VoiceLog 配置模板 =====================
 # 复制为 config.yaml 后按需修改：  cp config.example.yaml config.yaml
 
+# App 形态：
+#   "lite"(默认) = 轻量版：只在右上角菜单栏，所有操作都在菜单里完成，无 Dock 图标。
+#   "full"       = 完整版：常驻 Dock，带主窗口(首页/历史/设置/关于) + 菜单栏并存。
+# 也可用环境变量临时覆盖：VOICELOG_FLAVOR=full
+app_flavor: "lite"
+
 # 文字稿写到哪里（默认放桌面，方便随时看到；可在菜单栏「保存位置」随时改，会自动写回这里）
 vault_path: "~/Desktop/言壤语音日志"
 
@@ -40,6 +46,8 @@ energy_gate: true        # ③ 能量/近场门：挡远处外放视频（零 ML
 min_rms_dbfs: -45.0      #    响度下限，按菜单滤除数校准
 speaker_gate: false      # ④ 声纹门：注册你的音色后挡近场同语种视频/他人；菜单注册后开启
 speaker_threshold: 0.35  #    余弦相似度阈值，按菜单「上句相似度」校准（偏低更安全）
+speaker_min_verify_sec: 1.2  #  短于此(秒)的句子跳过声纹门——ECAPA 对 <~1.2s 短音频验不准，
+                         #    否则会把「早上好」这类短句误当他人丢掉（能量/近场门仍挡远场短噪声）
 speaker_profile: "~/voicelog-models/speaker_profile.npy"
 # 注册采集(质量驱动：累计「有效语音」秒数，采够才停，用户发呆不会让采集失效)
 enroll_voiced_sec: 20        #    目标有效语音秒数(采够即完成)

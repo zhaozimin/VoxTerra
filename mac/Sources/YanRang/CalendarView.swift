@@ -42,7 +42,7 @@ struct CalendarView: View {
                 )) {
                     ForEach(1...12, id: \.self) { Text("\($0) 月").tag($0) }
                 }
-                .labelsHidden().pickerStyle(.menu).fixedSize()
+                .labelsHidden().pickerStyle(.menu).fixedSize().clickable()
 
                 Picker("", selection: Binding(
                     get: { min(years.last!, max(years.first!, cal.component(.year, from: shown))) },
@@ -50,7 +50,7 @@ struct CalendarView: View {
                 )) {
                     ForEach(years, id: \.self) { Text(String($0)).tag($0) }
                 }
-                .labelsHidden().pickerStyle(.menu).fixedSize()
+                .labelsHidden().pickerStyle(.menu).fixedSize().clickable()
             }
             .frame(maxWidth: .infinity)
 
@@ -106,6 +106,7 @@ struct CalendarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .clickable()
     }
 
     // 选中=白字（今天选中=黑字，红底上更醒目）；今天未选=红字；普通=主/次色

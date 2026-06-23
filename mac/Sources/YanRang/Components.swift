@@ -1,17 +1,28 @@
 import SwiftUI
 
 /*
- * [INPUT]: 依赖 SwiftUI、Color 令牌
- * [OUTPUT]: 对外提供 card() 修饰器、BreathingDot、StatTile、ConfigRow
+ * [INPUT]: 依赖 SwiftUI/AppKit、Color 令牌
+ * [OUTPUT]: 对外提供 card()/clickable() 修饰器、BreathingDot、StatTile、ConfigRow
  * [POS]: mac/YanRang 复用组件层，承载 shadcn Card/状态点/统计块的原生等价物
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+import AppKit
 
 // 卡片底座：bg/surface(#fff) + border/default(#e5e5e5)，圆角 radius=10（Figma --radius）
 extension View {
     func card(_ radius: CGFloat = 10) -> some View {
         background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color.card))
             .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(Color.hairline, lineWidth: 1))
+    }
+
+    // 可点提示:鼠标移上去变手型指针——所有可点元素统一加它,用户一看便知此处能点。
+    // Tahoe(macOS 15+)用原生 pointerStyle(.link);旧系统降级 onHover+NSCursor。
+    @ViewBuilder func clickable() -> some View {
+        if #available(macOS 15.0, *) {
+            self.pointerStyle(.link)
+        } else {
+            self.onHover { $0 ? NSCursor.pointingHand.push() : NSCursor.pop() }
+        }
     }
 }
 

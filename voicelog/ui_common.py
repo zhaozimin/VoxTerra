@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 [INPUT]: 依赖 AppKit/Foundation(PyObjC，rumps 已带入) 的 NSWindow/NSObject/NSTextField/NSFont/NSEvent 修饰键常量
-[OUTPUT]: 对外提供 KeyWindow(补回编辑快捷键的模态窗基类)、BtnTarget(按钮回调桥)、make_label/make_rich_label(只读标签)、push_regular/pop_regular(前台策略计数)、字体颜色 helper
+[OUTPUT]: 对外提供 KeyWindow(补回编辑快捷键的模态窗基类)、BtnTarget(按钮回调桥)、make_label/make_rich_label(只读标签)、push_regular/pop_regular/floor_regular(前台策略计数·V1 常驻 Dock)、字体颜色 helper
 [POS]: voicelog 各原生窗口(enroll_ui / replace_ui)的公共底座，消除按钮桥与标签的重复代码。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 
@@ -49,6 +49,25 @@ def pop_regular():
             NSApp.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
         except Exception:
             pass
+
+
+def floor_regular():
+    """全窗口产品(V1)：把激活策略钉为 Regular(常驻 Dock)。给引用计数垫一层永久底,
+    使后续模态子窗(注册/设置/关键词)的 push/pop 永不把 App 切回无 Dock 的 Accessory。
+    幂等——多次调用只垫一次。lite 形态不调它，行为完全不变。"""
+    global _regular_depth, _floored
+    if _floored:
+        return
+    _floored = True
+    _regular_depth += 1
+    try:
+        NSApp.setActivationPolicy_(NSApplicationActivationPolicyRegular)
+        NSApp.activateIgnoringOtherApps_(True)
+    except Exception:
+        pass
+
+
+_floored = False
 
 
 # ============================================================================

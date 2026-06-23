@@ -5,7 +5,8 @@
 
 ## 成员清单
 - `test_core.py`: 标准库 `unittest` 套件(不引 pytest)。覆盖 `update_check`(版本解析/比较)、
-  `model_fetch`(四态状态机 `model_status_key`、`model_ready` 体积门槛、`download_model` 完整性校验)、
+  `model_fetch`(四态状态机 `model_status_key`、`model_ready` 体积门槛、`download_model` 完整性校验
+  + **断点续传重构锚点**:status ok/cancelled/fail 回填、取消留 .part、代理分片跨段重组、零进展有界失败)、
   `i18n`(三语键齐全 + 关键文案)、关键词窗 `Cmd+V` 粘贴(macOS+pyobjc 才跑，否则跳过)。
 
 ## 运行

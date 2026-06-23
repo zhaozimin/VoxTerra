@@ -20,12 +20,12 @@ Sources/YanRangApp/main.swift: 进程入口，`import YanRangUI` + `YanRangApp.m
 Theme.swift: 设计令牌，Figma 精确 hex + NSColor 动态明暗提供器，1:1 对齐 index.css :root/.dark
 BrandIcon.swift: SVG path→SwiftUI Path 解析器(含圆弧采样) + GitHub/Obsidian/X 官方路径 + logo 资源加载
 CalendarView.swift: 自定义月历(年/月下拉、红底选中、今日描红、记录红点)，复刻 shadcn calendar
-Components.swift: card() 卡片底座 + BreathingDot 呼吸灯 + StatTile + ConfigRow
-App.swift: public YanRangApp(被 main.swift 启动) + 统一工具栏窗口 + 顶栏(品牌/分段导航/状态丸配平) + MenuBarExtra 托盘
-Engine.swift: UI↔引擎契约(@MainActor ObservableObject)，Phase1 mock，Phase2 换读 sidecar；内含全局 ymdKey(公历钉死)供三处共用
+Components.swift: card() 卡片底座 + clickable()(可点元素统一手型指针·Tahoe pointerStyle) + BreathingDot 呼吸灯 + StatTile + ConfigRow
+App.swift: public YanRangApp(被 main.swift 启动) + 统一工具栏窗口 + 顶栏(品牌/CenteredNav 窗口居中导航·**收敛前隐藏淡入根治开屏颤抖**:位置连续两拍不变才显示、2.5s 兜底/状态丸) + 注册两段式浮层(EnrollConfirmSheet 确认须知 → EnrollOverlay 朗读窗:显稿子+倒计时+末尾"可再读"提示+取消) + MenuBarExtra 托盘 + EngineLauncher(Process 拉起同包内 headless 引擎 Contents/MacOS/VoiceLog；开发用 env VOICELOG_PYTHON/ENGINE;已有引擎在跑则不重复拉起) + AppDelegate(关窗=隐藏托盘不退出、退出停引擎)
+Engine.swift: UI↔引擎契约(@MainActor ObservableObject)，Phase1 mock，Phase2 换读/写 sidecar；内含全局 ymdKey(公历钉死)供三处共用 + 本地模型 models[ModelItem]/下载·取消(cancelModel)·切换·删除 + 声纹注册(enrollVoice/cancelEnroll + enrolling/进度回显)。**「归属保护」统一消除"乐观写被陈旧轮询闪回"**:pendingSettings/echo(语言时区)、pendingDownloads(下载卡,且守护期不用全局 pct 残值→防闪 100%)、pendingModelName(切换"使用中"不横跳)、pendingMuted/pendingSpeakerOn(暂停/声纹门)、pendingEnrollUntil(注册用带超时宽限,防瞬间失败时浮层永驻);modelNote 显下载中断/取消反馈
 HomeView.swift: 首页(状态英雄区 + 统计/配置 + 今日实时流)
 HistoryView.swift: 历史(搜索置顶 + 左大日历右内容卡 + 全历史搜索)
-SettingsView.swift: 设置(页内胶囊标签：语言时区/保存位置/关键词/参数/配置文件)
+SettingsView.swift: 设置(页内胶囊标签：语言时区/模型下载/保存位置/关键词/参数/配置文件)；语言时区页=固定宽(192)自定义 Menu 下拉(复刻 Tauri w-48 select)；模型下载页=模型卡+下载/取消(✕,留进度续传)/使用(切换)/删除按钮+进度+中断反馈条,驱动 Engine.models
 AboutView.swift: 关于(真 App logo + 介绍 + 作者链接，真品牌图标)
 TrayView.swift: 菜单栏弹窗(暂停/打开主窗口/作者三链接 emoji 柔和色/退出)
 Resources/: AppLogo.png(关于页彩色 logo) + TrayIcon.png(菜单栏单色模板图标)

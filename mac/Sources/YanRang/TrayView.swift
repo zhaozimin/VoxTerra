@@ -17,6 +17,15 @@ struct TrayView: View {
             }
 
             Divider().padding(.vertical, 4)
+            // 本地模型 / 声纹 是否启用——一眼可见(只读状态行，非按钮)
+            StatusLine(ok: engine.modelReady, title: "本地模型",
+                       detail: engine.modelReady ? engine.modelName : "未下载")
+            StatusLine(ok: engine.enrolled, title: "声纹",
+                       detail: engine.enrolled
+                         ? (engine.speakerOn ? "已注册 · 门开" : "已注册 · 门关")
+                         : "未注册")
+
+            Divider().padding(.vertical, 4)
             Text("言壤 v\(engine.version)")
                 .font(.caption).foregroundStyle(.tertiary)
                 .padding(.horizontal, 10).padding(.vertical, 2)
@@ -49,6 +58,24 @@ struct TrayView: View {
         .frame(width: 310, height: 280)
 }
 
+// 只读状态行：彩色指示 + 标题 + 详情(本地模型/声纹是否启用)
+private struct StatusLine: View {
+    let ok: Bool
+    let title: String
+    let detail: String
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .frame(width: 18).foregroundStyle(ok ? Color.ok : Color.warn)
+            Text(title).font(.system(size: 13, weight: .medium))
+            Spacer(minLength: 8)
+            Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+    }
+}
+
 private struct Row: View {
     var icon: String? = nil
     var emoji: String? = nil
@@ -73,5 +100,6 @@ private struct Row: View {
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
+        .clickable()
     }
 }
