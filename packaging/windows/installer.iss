@@ -6,7 +6,7 @@
 ; 显示名「言壤」(开始菜单/控制面板/向导可见);安装目录/输出文件名/exe 名保持 ASCII(VoiceLog)。
 #define MyAppName "言壤"
 #define MyAppNameAscii "VoiceLog"
-#define MyAppVersion "0.9.5"
+#define MyAppVersion "0.9.12"
 #define MyAppPublisher "Zimin Zhao"
 #define MyAppExeName "VoiceLog.exe"
 

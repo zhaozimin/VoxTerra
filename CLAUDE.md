@@ -12,7 +12,7 @@ Python 3.12(uv) + mlx-whisper(large-v3) + silero-vad + speechbrain(ECAPA) + soun
 </branding>
 
 <directory>
-voicelog/  - 应用本体 (主程序 voicelog_menubar.py + 声纹 speaker.py + 模型获取/更新检查 + i18n + 原生窗口)
+voicelog/  - 应用本体 (一套引擎两层外壳：菜单栏 lite / Dock 全窗口 full main_window.py + 声纹 speaker.py + 模型获取/更新检查 + i18n + 原生窗口)
 tests/     - 行为锚点 (标准库 unittest，钉死纯逻辑：版本比较/模型四态/下载完整性/i18n/粘贴)
 launchd/   - 开机自启：plist 与装载脚本 (登录即常驻，开发机自用)
 packaging/ - 分发打包 (macos: PyInstaller+签名+公证→.dmg；windows: 移植脚手架+CI)

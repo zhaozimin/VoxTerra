@@ -46,7 +46,7 @@ import i18n
 
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")  # 关掉会卡死的 hf_xet(ECAPA 若走 HF)
 
-VERSION = "0.9.5"
+VERSION = "0.9.12"
 
 # ---------------- 路径：只读资源(RES) 与 可写用户数据(DATA) 解耦 ----------------
 # Windows: 数据落 %APPDATA%\VoiceLog;其他平台(便于在 Mac 上验证)落 ~/.voicelog-win。
@@ -99,6 +99,7 @@ ENERGY_GATE = bool(CFG.get("energy_gate", True))
 MIN_RMS_DBFS = float(CFG.get("min_rms_dbfs", -45.0))
 SPEAKER_GATE = bool(CFG.get("speaker_gate", False))
 SPEAKER_THRESHOLD = float(CFG.get("speaker_threshold", 0.35))
+SPEAKER_MIN_VERIFY_SEC = float(CFG.get("speaker_min_verify_sec", 1.2))  # 短于此跳过声纹门(短音频验不准)
 SPEAKER_PROFILE = CFG.get("speaker_profile", "~/voicelog-models/speaker_profile.npy")
 ENROLL_VOICED_SEC = float(CFG.get("enroll_voiced_sec", 20))
 ENROLL_MAX_SEC = float(CFG.get("enroll_max_sec", 120))
@@ -323,7 +324,8 @@ class Recorder(threading.Thread):
             return self._drop("short")
         if ENERGY_GATE and _rms_dbfs(utt) < MIN_RMS_DBFS:
             return self._drop("far")
-        if self.speaker_on:
+        # 声纹门：太短(< SPEAKER_MIN_VERIFY_SEC)跳过——ECAPA 对 <~1.2s 验不准,否则误丢机主短句。
+        if self.speaker_on and utt.size >= SPEAKER_MIN_VERIFY_SEC * SR:
             ok, score = self.speaker.verify(utt)
             self.state["last_score"] = round(score, 3)
             if not ok:

@@ -1,0 +1,7 @@
+# Swift / SPM 构建产物（可再生，不入库）
+.build/
+.swiftpm/
+DerivedData/
+
+# 手工组装的 .app（由 bundle.sh 重生成）
+*.app
