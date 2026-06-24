@@ -3,7 +3,7 @@
 
 分发打包：把源码形态的 VoiceLog 变成粉丝可下载安装的成品。macOS 已正式交付(签名+公证,Latest)；Windows 经 GitHub Actions CI 真实构建并发布(测试版,未签名)。
 
-**发布约定**：每个正式版 Release 同带双平台安装包,资产用**固定名** `VoiceLog-macOS.dmg` / `VoiceLog-Windows.exe`(不带版本号),配合 `https://github.com/zhaozimin/Recorder/releases/latest/download/<固定名>` 给官网写死、永远拉最新。铁律:两条链接要都生效,二者必须挂在**同一个非 prerelease 的 Latest release** 内(`latest` 只认一个非预发布 release)。Windows 版本号与 macOS 独立演进。
+**发布约定**：每个正式版 Release 同带双平台安装包,资产用**固定名** `VoiceLog-macOS.dmg` / `VoiceLog-Windows.exe`(不带版本号),配合 `https://github.com/zhaozimin/Recorder/releases/latest/download/<固定名>` 给官网写死、永远拉最新。铁律:两条链接要都生效,二者必须挂在**同一个非 prerelease 的 Latest release** 内(`latest` 只认一个非预发布 release)。Windows 版本号与 macOS 独立演进。**完整发布仪式**(版本→记账→构建→公证→发布→自检 九步)见根 `CLAUDE.md` 的 `<release>` 段。
 
 ## 成员清单
 - `macos/`: macOS 打包子模块(已可用)。PyInstaller → 签名 → 公证 → `.dmg`。

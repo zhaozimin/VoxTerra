@@ -37,6 +37,21 @@ venv:   ~/voicelog-venv (uv hermetic CPython 3.12，绕开 Homebrew libexpat ABI
 输出:   config.yaml 的 vault_path (默认外置 PCIe SSD，掉线回退 ~/voicelog-fallback)
 </runtime>
 
+<release>
+发布仪式 —— 每次更新都按此套路推送，缺一不可：
+1. 版本号(+0.1 小改 / +1.0 大改)：引擎 `voicelog/voicelog_menubar.py` 的 VERSION 与 `packaging/macos/VoiceLog.spec` 同步；SwiftUI 壳 `mac/bundle.sh`。
+2. 记账：`CHANGELOG.md` 顶部加版本条目(病根 + 修法)。
+3. 文档同构：改哪层同步哪层 CLAUDE.md(GEB 协议，禁孤立变更)。
+4. 提交+推送：`git push origin main` → 打 `vX.Y.Z` tag 并 push。
+5. 构建 macOS：`packaging/macos/build-app.sh`(PyInstaller 引擎 + 嫁接 SwiftUI + 由内向外深签 → `dist/VoiceLog-<ver>.dmg`)。
+6. 公证：`packaging/macos/notarize.sh`(账号持有人 Apple ID + App 专用密码；开发者协议须保持已签，否则 403)。过线 = `stapler validate` 通过 + `spctl` 显 `Notarized Developer ID`。
+7. 发布到 GitHub —— **统一 Latest release(铁律)**：一个 release 同带双平台包，资产**固定名** `VoiceLog-macOS.dmg` + `VoiceLog-Windows.exe`(无版本号)；`gh release create vX.Y.Z --latest`(非 prerelease)。Windows：CI 在 `vX.Y-win` tag 产出 `VoiceLog-Windows.exe`，手动取下挂进本统一 release。
+8. 官网下载链接写死、永拉最新：`releases/latest/download/VoiceLog-macOS.dmg`、`.../VoiceLog-Windows.exe`。
+9. 装机自检：旧 App 改名备份(`.bak-preXXXX`) → 装新版 → 验 `state.json` 的 version + 心跳。
+铁律：未公证不发正式版；两平台包必同处**一个非 prerelease 的 Latest** release(`latest` 只认一个非预发布)；Windows 版本号与 macOS 独立演进；机器名/bundle id 永不改。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+</release>
+
 法则: 极简·稳定·导航·版本精确。音频即用即弃，单向数据流，门控便宜的先拦。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
