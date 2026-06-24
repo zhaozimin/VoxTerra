@@ -33,8 +33,9 @@ mkdir -p "$APP/Contents/Frameworks"
 cp "$DYLIB" "$APP/Contents/Frameworks/"
 install_name_tool -id "@rpath/$(basename "$DYLIB")" "$APP/Contents/Frameworks/$(basename "$DYLIB")"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/YanRang" 2>/dev/null || true
-cp -r "$MAC/.build/release/YanRangUI_YanRangUI.bundle" "$APP/Contents/Resources/" 2>/dev/null || true
-cp "$MAC"/Sources/YanRang/Resources/*.png "$APP/Contents/Resources/" 2>/dev/null || true
+# 品牌 PNG 平铺进 Contents/Resources —— 运行期唯一真相源(NSImage.bundled 经 Bundle.main 读取)。
+# 必须成功:缺图 = 启动图标空白/降级，故 set -euo pipefail 下不再吞错(过去 `2>/dev/null||true` 掩盖缺失)。
+cp "$MAC"/Sources/YanRang/Resources/*.png "$APP/Contents/Resources/"
 
 echo "==> [3/5] 改 Info.plist：主入口=YanRang，去 LSUIElement(显示窗口/Dock)"
 PL="$APP/Contents/Info.plist"

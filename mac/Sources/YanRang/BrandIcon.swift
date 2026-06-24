@@ -217,10 +217,10 @@ enum Asset {
 }
 
 extension NSImage {
-    /// Bundle.module(SPM 资源包，预览/Xcode 内置构建均可用) → Bundle.main(bundle.sh 手工组装后平铺的 PNG) 双重查找。
+    /// 资源查找：唯一真相源 = Bundle.main(=Contents/Resources，由 bundle.sh/build-app.sh 平铺 PNG)。
+    /// 绝不用 Bundle.module —— 其 SwiftPM 访问器在手工组装的 .app 里找不到资源包时会 fatalError 直接杀进程
+    /// (而非返回 nil)，曾致分发版启动即崩。这里全程 Optional，缺失则由 Asset 降级到 SF Symbol。
     static func bundled(_ name: String) -> NSImage? {
-        let url = Bundle.module.url(forResource: name, withExtension: "png")
-             ?? Bundle.main.url(forResource: name, withExtension: "png")
-        return url.flatMap { NSImage(contentsOf: $0) }
+        Bundle.main.url(forResource: name, withExtension: "png").flatMap(NSImage.init(contentsOf:))
     }
 }

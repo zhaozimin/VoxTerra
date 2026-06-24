@@ -21,8 +21,7 @@ if [ -n "$DYLIB" ]; then
     install_name_tool -id "@rpath/$(basename $DYLIB)" "$APP/Contents/Frameworks/$(basename $DYLIB)"
     install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/YanRang" 2>/dev/null || true
 fi
-# SPM 资源包 + PNG 平铺（Bundle.module / Bundle.main 双路径）
-cp -r ".build/$CONFIG/YanRangUI_YanRangUI.bundle" "$APP/Contents/Resources/" 2>/dev/null || true
+# 品牌 PNG 平铺进 Contents/Resources —— 运行期唯一真相源(Bundle.main)。不走 SPM 资源包/Bundle.module(分发即崩)。
 cp Sources/YanRang/Resources/*.png "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
@@ -35,8 +34,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>YanRang</string>
   <key>CFBundleIdentifier</key><string>com.zhaozimin.voicelog.swift</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.9.6</string>
-  <key>CFBundleVersion</key><string>0.9.6</string>
+  <key>CFBundleShortVersionString</key><string>0.9.14</string>
+  <key>CFBundleVersion</key><string>0.9.14</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>NSHighResolutionCapable</key><true/>

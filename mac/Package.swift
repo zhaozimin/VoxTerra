@@ -16,7 +16,10 @@ let package = Package(
         .target(
             name: "YanRangUI",
             path: "Sources/YanRang",
-            resources: [.process("Resources")]  // SPM 生成 YanRangUI_YanRangUI.bundle → Bundle.module 可用
+            // Resources 不走 SPM(故意不生成 Bundle.module)：手工组装的 .app 里 Bundle.module 访问器
+            // 找不到资源包会 fatalError 杀进程(分发即崩)。改由 bundle.sh/build-app.sh 平铺 PNG 进
+            // Contents/Resources, 运行期统一走 Bundle.main —— 单一真相源, 不崩。
+            exclude: ["Resources"]
         ),
         // ── 可执行 target：极薄入口 ──
         // 仅 main.swift 一句 YanRangApp.main()。产物名仍为 YanRang(bundle.sh 依赖此名)。

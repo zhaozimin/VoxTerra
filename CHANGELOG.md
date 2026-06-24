@@ -2,6 +2,21 @@
 
 版本规则：小改 +0.1，大改 +1.0。
 
+## v0.9.14 — 2026-06-24
+SwiftUI 前端打包后启动即崩根治（Bundle.module fatalError → 收敛 Bundle.main 单一真相源）。
+- **病根(crash log 确诊)**：菜单栏前端启动 → `MenuBarExtra` 求值托盘图标 → `NSImage.bundled` 先碰
+  SwiftPM 生成的 `Bundle.module`。其访问器契约是「找不到资源包就 `fatalError` 杀进程」而非返回 nil，
+  故 `Bundle.module.url ?? Bundle.main.url` 的兜底是**永不可达的死代码**。手工组装的 .app 里根本没有该
+  资源包(打包脚本把名字写错成 `YanRangUI_YanRangUI`、应为 `YanRang_YanRangUI`，又被 `2>/dev/null` 静默
+  吞掉) → 启动即 `EXC_BREAKPOINT (SIGTRAP)`，分发版必崩。`Contents/Resources` 里平铺好的 PNG 因先碰
+  `Bundle.module` 而永远读不到。**讽刺的是 `mac/CLAUDE.md` 早写明「用 Bundle.main 而非 Bundle.module，
+  后者分发即崩」——教训写进了文档，代码却背叛了文档。**
+- **修法(恢复代码↔文档同构)**：收敛到**单一真相源** `Bundle.main`(=Contents/Resources 平铺 PNG)。
+  `Package.swift` 资源声明 `.process` → `exclude`，**从此不生成 `Bundle.module`**(崩溃分支从语法层消失，
+  谁再写 `Bundle.module` 直接编译不过)；`NSImage.bundled` 只走 `Bundle.main`，缺失降级 SF Symbol；
+  `build-app.sh`/`bundle.sh` 删掉写错名的资源包拷贝，承重的 PNG 平铺去掉 `2>/dev/null` 缺图即中止构建。
+- **实测**：组装测试 .app 启动 → 进程稳定存活、零新崩溃报告(修复前 6 秒内连崩 5 次)。
+
 ## v0.9.13 — 2026-06-23
 闲置后首次唤醒卡顿根治（App Nap 双进程退出）。
 - **病根(已实测确诊)**：常驻产品 = SwiftUI 前端(YanRang) + Python 引擎(4G footprint，闲置实测 3.7G 被换出)，
