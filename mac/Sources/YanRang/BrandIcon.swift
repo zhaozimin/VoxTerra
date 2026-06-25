@@ -203,8 +203,11 @@ struct BrandIcon: View {
 //  Bundle 资源：App logo（红底麦克风+无限）与菜单栏单色图标
 // ============================================================================
 enum Asset {
-    /// 关于页/窗口用的彩色 App logo。
+    /// 关于页/窗口用的彩色 App logo（红底 squircle）。
     static let logo: NSImage = NSImage.bundled("AppLogo") ?? NSImage()
+
+    /// 菜单栏托盘摘要卡用的深色 App logo（=正在使用的 .icns 同源黑底 squircle，已裁成满铺）。
+    static let logoDark: NSImage = NSImage.bundled("AppLogoDark") ?? logo
 
     /// 菜单栏模板图标（黑色描边，isTemplate=true 自动适配明暗与系统主题色）。
     static let trayIcon: NSImage = {
