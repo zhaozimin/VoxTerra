@@ -63,7 +63,7 @@ from settings_ui import SettingsWindow
 # 故配置/日志/声纹必须落在用户可写区。两种形态：
 #   · 打包(.app)：资源在 bundle(_MEIPASS)，数据在 ~/Library/Application Support/VoiceLog
 #   · 源码(开发)：资源与数据都在代码旁——保持旧行为，现有 launchd 部署零改动
-VERSION = "0.9.14"
+VERSION = "0.9.15"
 
 FROZEN = getattr(sys, "frozen", False)
 RES = Path(getattr(sys, "_MEIPASS", "")) if FROZEN else Path(__file__).resolve().parent

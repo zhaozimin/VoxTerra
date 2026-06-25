@@ -3,7 +3,7 @@ import AppKit
 
 /*
  * [INPUT]: 依赖 Engine、各页面 View、Color 令牌、Asset.trayIcon
- * [OUTPUT]: 对外 public YanRangApp(由 Sources/YanRangApp/main.swift 启动)、统一工具栏 RootView、分段导航 Segmented、窗口居中导航 CenteredNav/NavCenterer(收敛淡入)、状态丸 StatusPill、声纹注册两段式浮层 EnrollConfirmSheet/EnrollOverlay、EngineLauncher(拉起 sidecar 引擎)、AppDelegate(关窗隐藏托盘/退出停引擎)
+ * [OUTPUT]: 对外 public YanRangApp(由 Sources/YanRangApp/main.swift 启动)、统一工具栏 RootView、分段导航 Segmented、窗口居中导航 CenteredNav/NavCenterer(收敛淡入)、状态丸 StatusPill、声纹注册两段式浮层 EnrollConfirmSheet/EnrollOverlay、EngineLauncher(拉起 sidecar 引擎)、AppDelegate(关窗隐藏托盘/退出停引擎/静默启动进后台形态见 Startup.swift)
  * [POS]: YanRangUI 库的外壳层，1:1 复刻 desktop/src/App.tsx 的「标题栏合一」布局；入口下沉到库以放行 SwiftUI 预览
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -97,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let launcher = EngineLauncher()
 
     func applicationDidFinishLaunching(_ note: Notification) {
+        if Startup.silent { Startup.enterBackground() }   // 静默启动:无 Dock + 关主窗,仅菜单栏后台记录
         launcher.start()                                  // App 起 → 引擎起(若尚无引擎在跑)
     }
     // 关最后一个窗口不退出 → App 留在菜单栏(隐藏到托盘)，从 TrayView「打开主窗口」重开

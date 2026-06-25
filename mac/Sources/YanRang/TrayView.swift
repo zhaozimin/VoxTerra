@@ -2,8 +2,8 @@ import SwiftUI
 import AppKit
 
 /*
- * [INPUT]: 依赖 Engine(@EnvironmentObject)、Environment(openWindow)、NSWorkspace、Color 令牌
- * [OUTPUT]: 对外提供 TrayView(菜单栏弹窗:本地模型/声纹状态行 + 暂停 + 打开主窗口 + 作者三链接 + 退出)
+ * [INPUT]: 依赖 Engine(@EnvironmentObject)、Environment(openWindow)、Startup(回前台形态)、NSWorkspace、Color 令牌
+ * [OUTPUT]: 对外提供 TrayView(菜单栏弹窗:本地模型/声纹状态行 + 暂停 + 打开主窗口(回前台形态) + 作者三链接 + 退出)
  * [POS]: App.swift 的 MenuBarExtra(.window) 内容视图;与主窗口共享 engine,状态实时同步
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  *
@@ -18,8 +18,8 @@ struct TrayView: View {
             Row(icon: engine.muted ? "play.fill" : "pause.fill",
                 title: engine.muted ? "继续录音" : "暂停录音") { engine.toggleMuted() }
             Row(icon: "house", title: "打开主窗口") {
+                Startup.enterForeground()       // 静默后台(无 Dock) → 恢复 Dock + 激活;非静默下幂等
                 openWindow(id: "main")
-                NSApp.activate(ignoringOtherApps: true)
             }
 
             Divider().padding(.vertical, 4)

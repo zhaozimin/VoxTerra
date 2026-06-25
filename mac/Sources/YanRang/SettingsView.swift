@@ -2,8 +2,8 @@ import SwiftUI
 import AppKit
 
 /*
- * [INPUT]: 依赖 Engine、card()、Color 令牌
- * [OUTPUT]: 对外提供 SettingsView（标签页式设置：语言时区/模型下载/保存位置/关键词/参数/配置）
+ * [INPUT]: 依赖 Engine、Startup(登录项/静默偏好)、card()、Color 令牌
+ * [OUTPUT]: 对外提供 SettingsView（标签页式设置：语言时区/模型下载/保存位置/关键词/参数/配置/启动）
  * [POS]: 设置页，1:1 复刻 desktop/src/pages/Settings.tsx（页内胶囊标签 + 内容区）；模型下载页驱动 Engine.models
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -34,18 +34,18 @@ let PARAMS: [Param] = [
 //  页内标签
 // ============================================================================
 enum SettingsTab: CaseIterable, Identifiable {
-    case lang, models, path, keywords, params, config
+    case lang, models, path, keywords, params, config, startup
     var id: Self { self }
     var title: String {
         switch self {
         case .lang: "语言和时区"; case .models: "模型下载"; case .path: "保存位置"; case .keywords: "关键词"
-        case .params: "参数设置"; case .config: "配置文件"
+        case .params: "参数设置"; case .config: "配置文件"; case .startup: "启动"
         }
     }
     var icon: String {
         switch self {
         case .lang: "globe"; case .models: "arrow.down.circle"; case .path: "folder"; case .keywords: "tag"
-        case .params: "slider.horizontal.3"; case .config: "doc.text"
+        case .params: "slider.horizontal.3"; case .config: "doc.text"; case .startup: "power"
         }
     }
 }
@@ -64,6 +64,7 @@ struct SettingsView: View {
                 case .keywords: KeywordsTab()
                 case .params: ParamsTab()
                 case .config: ConfigTab()
+                case .startup: StartupTab()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -533,6 +534,48 @@ private struct ConfigTab: View {
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .card()
+    }
+}
+
+// ---------------------------------------------------------------- 启动
+// 纯前端 App 行为(不入引擎 config)：开机自启走系统登录项、静默启动走 UserDefaults。详见 Startup.swift。
+private struct StartupTab: View {
+    @AppStorage(Startup.kSilent) private var silent = false   // 静默启动:与 Startup.silent 同一存储,响应式
+    @State private var atLogin = false                        // 开机自启:镜像 SMAppService 真实状态
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SwitchRow(title: "开机自启", hint: "登录系统后自动启动言壤",
+                      isOn: Binding(get: { atLogin }, set: { on in
+                          Startup.launchAtLogin = on
+                          atLogin = Startup.launchAtLogin      // 回读真实状态:注册失败/被系统拒则自动复位
+                      }))
+            Divider()
+            SwitchRow(title: "静默启动", hint: "启动时不显示窗口，直接在后台记录；需要时从菜单栏「打开主窗口」",
+                      isOn: $silent)
+        }
+        .padding(.horizontal, 18)
+        .card()
+        .onAppear { atLogin = Startup.launchAtLogin }          // 进页回读当前登录项状态
+    }
+}
+
+// 开关行：左标题+说明、右 Switch（版式复刻 LangRow）。
+private struct SwitchRow: View {
+    let title: String
+    let hint: String
+    @Binding var isOn: Bool
+    var body: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 14, weight: .medium))
+                Text(hint).font(.caption).foregroundStyle(Color.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Toggle("", isOn: $isOn).toggleStyle(.switch).labelsHidden().clickable()
+        }
+        .padding(.vertical, 14)
     }
 }
 
