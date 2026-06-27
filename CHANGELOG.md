@@ -2,6 +2,14 @@
 
 版本规则：小改 +0.1，大改 +1.0。
 
+## v1.2 — 2026-06-26
+修两个关键词相关的真 bug + 一个回显死锁。三者同源：关键词链路的「匹配」「销毁」「对账」各崩一处。
+- **关键词纠错对多形态失效（用户主诉）**：`apply_replace` 对 ASCII 键用大小写敏感、连续精确字面量匹配，而 whisper 把同一口语词吐成「web coding / webcoding / Web-coding」三种分词+大小写+连字符变体，一条字面规则数学上只命中一种，其余永远漏网（日志铁证 `text/2026-06-19.md:191`、`-20.md:293`、`-20.md:377`）。修法：键里字母数字按序匹配、字符间容忍任意空白/连字符（一条规则吃下全部形态）；**键全小写→大小写不敏感**（口语词首字母随句首浮动），**键含大写→保持区分**（守住 `Cloud`≠日常 `cloud`，否则「the cloud」被错纠成「the Claude」）；首尾非字母数字零宽断言守词边界，iCloud/Cloudflare 零误伤。mac/Win 两端 `apply_replace` 同步修复。代价：理论上对极端输入（如「code cs」）可能过纠，对真实词库可忽略。
+- **切到「关键词」页再切回首页卡死数秒**：SwiftUI 内置 `TextEditor` 持有 first responder 时，被 `RootView` 无 `.id()` 的 `switch` 同步销毁整棵 `SettingsView` 子树，AppKit 拆解带焦点的文本系统（辞 first responder / 注销输入法会话 / 拆 TextKit）顶住主线程。它是全设置页唯一的 NSTextView，故只有关键词页触发。修法：关键词框换成自管理生命周期的 `NSTextView` 包装（`KeywordsEditor: NSViewRepresentable`），`dismantleNSView` 里**先让窗口交出 first responder 再拆**，把被动同步拆解提前到可控时机，与仓库既有 NSViewRepresentable 一脉。
+- **关键词回显往返死锁**：`saveKeywords` 旧写法把用户原文塞进 `pendingSettings` 做逐字节相等对账，但引擎必把规则规范化（`k = v`/去空行注释/去重）后回写 → 永不相等 → 守护永久卡死、`cfgKeywords` 冻在输入值，再进页显示发散的猜测值、甚至掩盖被静默丢弃的行。修法：关键词不参与 pending 对账，直接下命令、下一拍由引擎规范化值回显。
+- **版本号回归同步**：SwiftUI 壳显示版本 `Engine.version` 此前停在 0.9.12（漏随 1.0/1.1 升）、`VoiceLog.spec` 停在 1.0，本次随 `VERSION` 一并校正到 1.2。
+- 机器名/bundle id（`com.zhaozimin.voicelog`）/数据目录不动。Windows 版本号独立演进，本次仅引擎逻辑 + macOS 前端，Windows 包按需另发。
+
 ## v1.1 — 2026-06-25
 App 图标换装 3D 写实风：麦克风与无限符号(∞)熔接成单体——斜置麦克风做左环、声波/五线谱做右环、一条绛红线点睛，呼应「无限录音·无限转写」。深色满铺 squircle，与 MicTether 同一视觉语言。
 - **图标管线反转**：真相源由「白透明 logo」改为「成品 3D 彩色母版」(`voicelog/assets/logo_src.png`)；`make_icon.py`/`make_ico.py` 改为「母版裁满铺圆角」一气产 `.icns`/`.ico`/iconmaster；README hero、关于页彩色 logo、托盘摘要卡黑底 logo 同步换新。

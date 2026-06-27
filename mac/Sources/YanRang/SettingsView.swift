@@ -353,10 +353,7 @@ private struct KeywordsTab: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("每行一条：写「错词 = 正词」做精确纠错；只写一个词进识别词库。保存即生效。")
                 .font(.caption).foregroundStyle(Color.textTertiary)
-            TextEditor(text: $text)
-                .font(.system(.callout, design: .monospaced))
-                .scrollContentBackground(.hidden)
-                .padding(8)
+            KeywordsEditor(text: $text)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(RoundedRectangle(cornerRadius: 6).fill(Color.sunken))
             HStack {
@@ -370,6 +367,59 @@ private struct KeywordsTab: View {
         .card()
         .onAppear { text = engine.cfgKeywords }                 // 回显已存关键词
         .onChange(of: text) { _, _ in saved = false }
+    }
+}
+
+// ============================================================================
+//  关键词编辑器：自管理生命周期的 NSTextView 包装(NSViewRepresentable)。
+//  根治「切走关键词页卡死」——SwiftUI 内置 TextEditor 在持有 first responder 时被
+//  无 .id() 的 switch 同步销毁，AppKit 拆解带焦点的文本系统(辞 first responder /
+//  注销输入法会话 / 拆 TextKit)会顶住主线程数秒。这里在 dismantleNSView 里【先让窗口
+//  交出 first responder、断 delegate，再让视图被回收】，把被动同步拆解提前到可控时机。
+//  与仓库既有「NSViewRepresentable 包 NSView」一脉(PulseDotRep/NavCenterer/
+//  WindowConfigurator，及 voicelog/replace_ui 的原生 NSTextView)。
+//  updateNSView 的 `tv.string != text` 守卫断开 textDidChange→text→updateNSView 回环。
+// ============================================================================
+private struct KeywordsEditor: NSViewRepresentable {
+    @Binding var text: String
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let tv = NSTextView()
+        tv.delegate = context.coordinator
+        tv.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
+        tv.isRichText = false
+        tv.allowsUndo = true
+        tv.drawsBackground = false                       // 等价 scrollContentBackground(.hidden)
+        tv.textContainerInset = NSSize(width: 8, height: 8)
+        tv.autoresizingMask = [.width]
+        let sv = NSScrollView()
+        sv.documentView = tv
+        sv.drawsBackground = false
+        sv.hasVerticalScroller = true
+        return sv
+    }
+
+    func updateNSView(_ sv: NSScrollView, context: Context) {
+        guard let tv = sv.documentView as? NSTextView, tv.string != text else { return }
+        tv.string = text
+    }
+
+    // 病根所在：销毁前主动让窗口交出 first responder + 断 delegate，避免带焦点的 NSTextView 被同步硬拆。
+    static func dismantleNSView(_ sv: NSScrollView, coordinator: Coordinator) {
+        if let tv = sv.documentView as? NSTextView {
+            tv.window?.makeFirstResponder(nil)
+            tv.delegate = nil
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        let parent: KeywordsEditor
+        init(_ p: KeywordsEditor) { parent = p }
+        func textDidChange(_ note: Notification) {
+            guard let tv = note.object as? NSTextView else { return }
+            parent.text = tv.string
+        }
     }
 }
 

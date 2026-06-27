@@ -140,7 +140,7 @@ final class Engine: ObservableObject {
     private var lastNoteTodayKey: String? = nil
     private var lastModelFp = ""
 
-    let version = "0.9.12"
+    let version = "1.2"
 
     // 四张模型卡（固定清单）；state 由 syncModels() 依 state.json + 目录扫描派生。
     @Published var models: [ModelItem] = [
@@ -402,7 +402,11 @@ final class Engine: ObservableObject {
     func setPrimaryLang(_ v: String)            { cfgPrimaryLang = v; pendingSettings["primary_language"] = v; send("set_language", ["primary": v]) }
     func setSecondaryLang(_ v: String)          { cfgSecondaryLang = v; pendingSettings["secondary_language"] = v; send("set_language", ["secondary": v]) }
     func setTimezone(_ tz: String)              { cfgTimezone = tz; pendingSettings["timezone"] = tz; send("set_timezone", ["tz": tz]) }
-    func saveKeywords(_ text: String)           { cfgKeywords = text; pendingSettings["keywords"] = text; send("save_keywords", ["text": text]) }
+    // 关键词不走「乐观回显 + pending 对账」：引擎必把规则规范化(`k = v`、去空行/注释/去重)后回写，
+    // 与用户原文逐字节几乎永不相等 → 旧写法的 pendingSettings 守护会永久卡死，cfgKeywords 冻在用户
+    // 输入值再不被引擎真值刷新(再进页 onAppear 显示的就成了发散的猜测值，甚至掩盖被静默丢弃的行)。
+    // 关键词不参与实时回显(仅 onAppear 取一次)，无闪烁可防，故直接下命令、下一拍由引擎规范化值回显。
+    func saveKeywords(_ text: String)           { send("save_keywords", ["text": text]) }
     func saveParams(_ vals: [String: Double])   { send("set_params", vals.mapValues { $0 as Any }) }
     func openConfig()                           { send("open_config") }
     func checkUpdate()                          { send("check_update") }

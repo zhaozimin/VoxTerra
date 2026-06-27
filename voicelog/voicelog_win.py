@@ -183,11 +183,24 @@ def _rms_dbfs(x: np.ndarray) -> float:
     return 20.0 * np.log10(rms + 1e-9)
 
 
+def _ascii_pat(k: str) -> str:
+    """ASCII 键 → 弹性正则：字母数字按序匹配、字符间容忍空白/连字符，一条规则吸收
+    whisper 的「web coding / webcoding / Web-coding」分词与连字符歧义；首尾非字母数字
+    零宽断言守词边界(Cloud→Claude 不误伤 iCloud/Cloudflare)。与 voicelog_menubar 同构。"""
+    chars = re.findall(r"[A-Za-z0-9]", k)
+    if not chars:
+        return re.escape(k)
+    core = r"[\s\-]*".join(re.escape(c) for c in chars)
+    return rf"(?<![A-Za-z0-9])(?:{core})(?![A-Za-z0-9])"
+
+
 def apply_replace(text: str) -> str:
-    """专名纠错。ASCII 词按词边界,避免 Cloud→Claude 误伤 iCloud。"""
+    """专名纠错。ASCII 键空白/连字符弹性匹配；键全小写→大小写不敏感，含大写→区分
+    (守住 Cloud≠日常 cloud)。非 ASCII 键精确替换。回替用 lambda 免反斜杠被当转义。"""
     for k, v in REPLACE.items():
         if k.isascii() and k.strip():
-            text = re.sub(rf"(?<![A-Za-z]){re.escape(k)}(?![A-Za-z])", v, text)
+            flags = re.IGNORECASE if k == k.lower() else 0
+            text = re.sub(_ascii_pat(k), lambda m, v=v: v, text, flags=flags)
         else:
             text = text.replace(k, v)
     return text
